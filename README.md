@@ -35,6 +35,18 @@ pnpm install
 pnpm dev
 ```
 
+## Déploiement
+
+Le projet est déployé sur **Vercel** (build statique Vite, zéro backend).
+
+```bash
+pnpm build   # génère dist/
+```
+
+Vercel détecte automatiquement Vite et sert `dist/`. Les fichiers `.wasm` MediaPipe sont copiés dans `public/wasm/` via `copy-wasm.js` (exécuté en `prebuild`).
+
+> `getUserMedia` exige HTTPS — Vercel fournit un certificat TLS par défaut.
+
 ## Agent tooling
 
 Context7 is configured for Phaser and MediaPipe (see `.mcp.json`):

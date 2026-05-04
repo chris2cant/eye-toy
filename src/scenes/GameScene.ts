@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { HandTracker } from "../camera/HandTracker";
+import { handTracker } from "../camera/HandTracker";
 import type { LandmarksPayload } from "../camera/HandTracker";
 import { AudioFX } from "../audio/AudioFX";
 
@@ -47,7 +47,6 @@ export class GameScene extends Phaser.Scene {
   private videoEl!: HTMLVideoElement;
   private webcamTex!: Phaser.Textures.CanvasTexture;
   private bg!: Phaser.GameObjects.Image;
-  private handTracker = new HandTracker();
   private cursors: Phaser.GameObjects.Arc[] = [];
   private circles: GameCircle[] = [];
   private timerGraphics!: Phaser.GameObjects.Graphics;
@@ -70,22 +69,9 @@ export class GameScene extends Phaser.Scene {
     );
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      this.videoEl = await handTracker.initCamera();
 
-      this.videoEl = document.createElement("video");
-      this.videoEl.srcObject = stream;
-      this.videoEl.muted = true;
-      this.videoEl.playsInline = true;
-      await this.videoEl.play();
-
-      await new Promise<void>((resolve) => {
-        if (this.videoEl.readyState >= 1) {
-          resolve();
-        } else {
-          this.videoEl.onloadedmetadata = () => resolve();
-        }
-      });
-
+      if (this.textures.exists("webcam")) this.textures.remove("webcam");
       const tex = this.textures.createCanvas("webcam", width, height);
       if (!tex) throw new Error("createCanvas returned null");
       this.webcamTex = tex;
@@ -93,9 +79,10 @@ export class GameScene extends Phaser.Scene {
 
       this.scale.on("resize", this.onResize, this);
 
-      await this.handTracker.init(this.videoEl);
-      this.handTracker.on("landmarks", this.onLandmarks, this);
-      this.handTracker.start();
+      await handTracker.initDetector();
+      handTracker.on("landmarks", this.onLandmarks, this);
+      this.events.once("shutdown", () => handTracker.off("landmarks", this.onLandmarks, this));
+      handTracker.start();
 
       this.runCountdown();
     } catch (err) {
@@ -207,11 +194,10 @@ export class GameScene extends Phaser.Scene {
 
   private endGame() {
     this.gameActive = false;
-    this.handTracker.stop();
     this.circles.forEach((c) => { c.expireTimer.destroy(); c.destroy(); });
     this.circles = [];
     this.scene.stop("UIScene");
-    this.scene.start("GameOverScene", { score: this.score });
+    this.scene.launch("GameOverScene", { score: this.score });
   }
 
   private spawnCircle() {
@@ -242,6 +228,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onLandmarks({ hands }: LandmarksPayload) {
+    if (!this.gameActive) {
+      this.cursors.forEach((c) => c.setVisible(false));
+      return;
+    }
     const { width, height } = this.scale;
     this.cursors.forEach((cursor, i) => {
       const hand = hands[i];
