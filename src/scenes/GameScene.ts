@@ -2,9 +2,10 @@ import Phaser from "phaser";
 import { handTracker } from "../camera/HandTracker";
 import type { LandmarksPayload } from "../camera/HandTracker";
 import { AudioFX } from "../audio/AudioFX";
+import { HEX, COLOR, FONT, DEPTH, GAME_CIRCLE_PALETTE } from "../design-system/tokens";
 
 const PALM_LANDMARK = 9;
-const CURSOR_COLORS = [0x00ff88, 0x00aaff];
+const CURSOR_COLORS = [HEX.brandPrimary, HEX.info];
 const GAME_DURATION = 10; // secondes
 
 const HIT_TOLERANCE = 20;
@@ -12,7 +13,7 @@ const MAX_CIRCLES = 5;
 const SPAWN_TWEEN_MS = 200;
 const POP_TWEEN_MS = 150;
 const EXPIRE_TWEEN_MS = 300;
-const PALETTE = [0xff4444, 0x4488ff, 0x44ff88, 0xffdd00, 0xff8800, 0xaa44ff];
+const PALETTE = [...GAME_CIRCLE_PALETTE];
 
 interface DifficultyTier {
   threshold: number;   // fraction du temps écoulé [0, 1)
@@ -36,10 +37,10 @@ type GameCircle = Phaser.GameObjects.Arc & {
 };
 
 const FLOAT_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
-  fontSize: "32px",
-  fontFamily: "monospace",
-  color: "#ffffff",
-  stroke: "#000000",
+  fontSize: "28px",
+  fontFamily: FONT.identity,
+  color: COLOR.brandPrimary,
+  stroke: COLOR.bgCanvas,
   strokeThickness: 3,
 };
 
@@ -89,9 +90,9 @@ export class GameScene extends Phaser.Scene {
       console.error("[GameScene] erreur d'initialisation:", err);
       this.add
         .text(width / 2, height / 2, "Caméra refusée\nVeuillez autoriser l'accès à la webcam", {
-          fontSize: "32px",
-          color: "#ff4444",
-          fontFamily: "monospace",
+          fontSize: "28px",
+          color: COLOR.danger,
+          fontFamily: FONT.ui,
           align: "center",
         })
         .setOrigin(0.5);
@@ -116,14 +117,18 @@ export class GameScene extends Phaser.Scene {
       const txt = this.add
         .text(width / 2, height / 2, steps[i], {
           fontSize: "160px",
-          fontFamily: "monospace",
-          color: isGo ? "#00ff88" : "#ffffff",
-          stroke: "#000000",
-          strokeThickness: 8,
+          fontFamily: FONT.identity,
+          fontStyle: "900",
+          color: isGo ? COLOR.brandPrimary : COLOR.textPrimary,
+          stroke: COLOR.bgCanvas,
+          strokeThickness: 6,
+          shadow: isGo
+            ? { offsetX: 0, offsetY: 0, color: COLOR.brandPrimary, blur: 30, fill: true }
+            : undefined,
         })
         .setOrigin(0.5)
         .setScale(2)
-        .setDepth(20);
+        .setDepth(DEPTH.topUi);
 
       i++;
       this.tweens.add({

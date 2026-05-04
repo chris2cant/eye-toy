@@ -2,19 +2,16 @@ import Phaser from "phaser";
 import { handTracker } from "../camera/HandTracker";
 import type { LandmarksPayload } from "../camera/HandTracker";
 import { AudioFX } from "../audio/AudioFX";
+import { COLOR, HEX, FONT, DEPTH } from "../design-system/tokens";
+import { DwellButton } from "../design-system/DwellButton";
+import { HandCursors } from "../design-system/HandCursors";
 
 const PALM_LANDMARK = 9;
-const DWELL_MS = 1500;
-const DWELL_DRAIN_MS = 600;
-const DWELL_ZONE_PAD = 60;
 
 export class MenuScene extends Phaser.Scene {
   private webcamTex: Phaser.Textures.CanvasTexture | null = null;
-  private handCursors: Phaser.GameObjects.Arc[] = [];
-  private dwellGraphics!: Phaser.GameObjects.Graphics;
-  private btn!: Phaser.GameObjects.Text;
-  private dwellProgress = 0;
-  private dwellActivated = false;
+  private cursors!: HandCursors;
+  private btn!: DwellButton;
   private handPositions: ({ x: number; y: number } | null)[] = [null, null];
 
   constructor() {
@@ -26,93 +23,171 @@ export class MenuScene extends Phaser.Scene {
     const cx = width / 2;
     const best = parseInt(localStorage.getItem("eyetoy_best") ?? "0", 10);
 
-    this.dwellProgress = 0;
-    this.dwellActivated = false;
     this.handPositions = [null, null];
 
-    // Flux webcam en fond (disponible si on revient du jeu)
     this.setupWebcam(width, height);
 
-    // Overlay sombre
-    this.add.rectangle(cx, height / 2, width, height, 0x000000, 0.5).setDepth(1);
-
+    // Overlay semi-transparent
     this.add
-      .text(cx, height * 0.18, "EYE TOY", {
-        fontSize: "80px",
-        fontFamily: "monospace",
-        color: "#00ff88",
-        stroke: "#000000",
-        strokeThickness: 6,
+      .rectangle(cx, height / 2, width, height, HEX.bgCanvas, 0.6)
+      .setDepth(DEPTH.bg);
+
+    this.drawHudDecorations(width, height);
+
+    // Titre
+    this.add
+      .text(cx, height * 0.17, "EYE TOY", {
+        fontSize: "88px",
+        fontFamily: FONT.identity,
+        fontStyle: "900",
+        color: COLOR.brandPrimary,
+        shadow: {
+          offsetX: 0,
+          offsetY: 0,
+          color: COLOR.brandPrimary,
+          blur: 24,
+          fill: true,
+        },
       })
       .setOrigin(0.5)
-      .setDepth(2);
+      .setDepth(DEPTH.hud);
 
+    // Sous-titre
     this.add
-      .text(
-        cx,
-        height * 0.38,
-        "Attrape les ronds avec tes mains !\n+10 pts par rond attrapé\n-5 pts si un rond expire",
-        {
-          fontSize: "26px",
-          fontFamily: "monospace",
-          color: "#ffffff",
-          stroke: "#000000",
-          strokeThickness: 3,
-          align: "center",
-          lineSpacing: 10,
-        },
-      )
+      .text(cx, height * 0.28, "Attrape les ronds avec tes mains !", {
+        fontSize: "20px",
+        fontFamily: FONT.ui,
+        color: COLOR.textSecondary,
+      })
       .setOrigin(0.5)
-      .setDepth(2);
+      .setDepth(DEPTH.hud);
 
+    // Règles
+    this.addRuleRow(cx, height * 0.39, "+10 pts", "par rond attrapé", COLOR.success);
+    this.addRuleRow(cx, height * 0.47, "−5 pts", "si un rond expire", COLOR.danger);
+
+    // Meilleur score
     if (best > 0) {
-      this.add
-        .text(cx, height * 0.58, `Meilleur score : ${best}`, {
-          fontSize: "28px",
-          fontFamily: "monospace",
-          color: "#ffdd00",
-          stroke: "#000000",
-          strokeThickness: 3,
-        })
-        .setOrigin(0.5)
-        .setDepth(2);
+      this.addScorePill(cx, height * 0.59, best);
     }
 
-    this.btn = this.add
-      .text(cx, height * 0.73, "  JOUER  ", {
-        fontSize: "48px",
-        fontFamily: "monospace",
-        color: "#ffffff",
-        backgroundColor: "#226622",
-        stroke: "#000000",
-        strokeThickness: 4,
-        padding: { x: 28, y: 14 },
-      })
-      .setOrigin(0.5)
-      .setDepth(2)
-      .setInteractive({ useHandCursor: true });
-
-    this.btn.on("pointerover", () => this.btn.setStyle({ backgroundColor: "#338833" }));
-    this.btn.on("pointerout", () => this.btn.setStyle({ backgroundColor: "#226622" }));
-    this.btn.on("pointerdown", () => this.doStart());
-
-    // Indice visuel dwell
-    this.add
-      .text(cx, height * 0.73 + 68, "✋  Maintiens ta main sur le bouton", {
-        fontSize: "18px",
-        fontFamily: "monospace",
-        color: "#aaaaaa",
-      })
-      .setOrigin(0.5)
-      .setDepth(2);
-
-    this.dwellGraphics = this.add.graphics().setDepth(3);
-
-    this.handCursors = [0x00ff88, 0x00aaff].map((color) =>
-      this.add.circle(0, 0, 24, color, 0.8).setDepth(4).setVisible(false),
+    // Bouton JOUER
+    this.btn = new DwellButton(
+      this,
+      cx,
+      height * 0.73,
+      "  JOUER  →",
+      () => {
+        AudioFX.pop();
+        this.doStart();
+      },
+      { depth: DEPTH.hud },
     );
 
+    // Indice dwell
+    this.add
+      .text(cx, height * 0.73 + this.btn.height / 2 + 22, "✋  Maintiens la main sur le bouton", {
+        fontSize: "16px",
+        fontFamily: FONT.ui,
+        color: COLOR.textMuted,
+      })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.hud);
+
+    this.cursors = new HandCursors(this, DEPTH.cursor);
     this.setupHandTracking();
+  }
+
+  private addRuleRow(cx: number, y: number, value: string, label: string, color: string) {
+    const g = this.add.graphics().setDepth(DEPTH.hud);
+    const panelW = 320;
+    const panelH = 38;
+    g.fillStyle(HEX.bgElevated, 0.85);
+    g.fillRect(cx - panelW / 2, y - panelH / 2, panelW, panelH);
+    g.lineStyle(1, HEX.bgSurface, 1);
+    g.strokeRect(cx - panelW / 2, y - panelH / 2, panelW, panelH);
+
+    this.add
+      .text(cx - 100, y, value, {
+        fontSize: "18px",
+        fontFamily: FONT.identity,
+        color,
+      })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.hud);
+
+    this.add
+      .text(cx + 30, y, label, {
+        fontSize: "15px",
+        fontFamily: FONT.ui,
+        color: COLOR.textSecondary,
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(DEPTH.hud);
+  }
+
+  private addScorePill(cx: number, y: number, best: number) {
+    const g = this.add.graphics().setDepth(DEPTH.hud);
+    const panelW = 300;
+    const panelH = 42;
+    g.fillStyle(HEX.bgElevated, 0.9);
+    g.fillRect(cx - panelW / 2, y - panelH / 2, panelW, panelH);
+    g.lineStyle(1.5, HEX.warning, 0.6);
+    g.strokeRect(cx - panelW / 2, y - panelH / 2, panelW, panelH);
+
+    this.add
+      .text(cx - 30, y, "MEILLEUR", {
+        fontSize: "11px",
+        fontFamily: FONT.ui,
+        color: COLOR.textMuted,
+        letterSpacing: 2,
+      })
+      .setOrigin(1, 0.5)
+      .setDepth(DEPTH.hud);
+
+    this.add
+      .text(cx - 20, y, `${best} pts`, {
+        fontSize: "20px",
+        fontFamily: FONT.identity,
+        color: COLOR.warning,
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(DEPTH.hud);
+  }
+
+  private drawHudDecorations(width: number, height: number) {
+    const g = this.add.graphics().setDepth(DEPTH.bg);
+
+    // Réticule coin haut-gauche
+    const drawReticle = (x: number, y: number, r: number, alpha: number) => {
+      g.lineStyle(1, HEX.brandPrimary, alpha);
+      g.beginPath();
+      g.arc(x, y, r, 0, Math.PI * 2);
+      g.strokePath();
+
+      // Croix centrale
+      g.lineStyle(1, HEX.brandPrimary, alpha * 0.6);
+      g.beginPath();
+      g.moveTo(x - r * 0.35, y);
+      g.lineTo(x + r * 0.35, y);
+      g.strokePath();
+      g.beginPath();
+      g.moveTo(x, y - r * 0.35);
+      g.lineTo(x, y + r * 0.35);
+      g.strokePath();
+    };
+
+    drawReticle(width * 0.08, height * 0.12, 48, 0.18);
+    drawReticle(width * 0.08, height * 0.12, 32, 0.12);
+    drawReticle(width * 0.92, height * 0.12, 48, 0.18);
+    drawReticle(width * 0.92, height * 0.12, 32, 0.12);
+
+    // Ligne horizontale subtile en bas
+    g.lineStyle(1, HEX.brandPrimary, 0.08);
+    g.beginPath();
+    g.moveTo(width * 0.1, height * 0.88);
+    g.lineTo(width * 0.9, height * 0.88);
+    g.strokePath();
   }
 
   private setupWebcam(width: number, height: number) {
@@ -125,8 +200,8 @@ export class MenuScene extends Phaser.Scene {
     this.webcamTex = tex;
     this.add
       .image(width / 2, height / 2, "webcam-menu")
-      .setDepth(0)
-      .setAlpha(0.45);
+      .setDepth(DEPTH.webcam)
+      .setAlpha(0.35);
   }
 
   private setupHandTracking() {
@@ -152,7 +227,6 @@ export class MenuScene extends Phaser.Scene {
         try {
           await handTracker.initCamera();
           await handTracker.initDetector();
-          // Webcam disponible maintenant — setup canvas
           const { width, height } = this.scale;
           this.setupWebcam(width, height);
           handTracker.start();
@@ -165,7 +239,6 @@ export class MenuScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number) {
-    // Dessin du flux webcam
     const videoEl = handTracker.getVideoEl();
     if (this.webcamTex && videoEl && videoEl.readyState >= 2) {
       const { width, height } = this.scale;
@@ -185,61 +258,8 @@ export class MenuScene extends Phaser.Scene {
       }
     }
 
-    // Curseurs mains
-    this.handPositions.forEach((pos, i) => {
-      const cursor = this.handCursors[i];
-      if (!pos) { cursor.setVisible(false); return; }
-      cursor.setPosition(pos.x, pos.y).setVisible(true);
-    });
-
-    // Zone de survol élargie autour du bouton
-    const bounds = this.btn.getBounds();
-    const hitZone = new Phaser.Geom.Rectangle(
-      bounds.x - DWELL_ZONE_PAD,
-      bounds.y - DWELL_ZONE_PAD,
-      bounds.width + DWELL_ZONE_PAD * 2,
-      bounds.height + DWELL_ZONE_PAD * 2,
-    );
-
-    const handOverButton = this.handPositions.some(
-      (pos) => pos !== null && hitZone.contains(pos.x, pos.y),
-    );
-
-    if (handOverButton && !this.dwellActivated) {
-      this.dwellProgress = Math.min(1, this.dwellProgress + delta / DWELL_MS);
-      if (this.dwellProgress >= 1) {
-        this.dwellActivated = true;
-        AudioFX.pop();
-        this.doStart();
-      }
-    } else if (!handOverButton) {
-      this.dwellProgress = Math.max(0, this.dwellProgress - delta / DWELL_DRAIN_MS);
-    }
-
-    this.drawDwellRing(bounds, this.dwellProgress);
-    this.btn.setStyle({ backgroundColor: handOverButton ? "#338833" : "#226622" });
-  }
-
-  private drawDwellRing(bounds: Phaser.Geom.Rectangle, progress: number) {
-    this.dwellGraphics.clear();
-    if (progress <= 0) return;
-
-    const cx = bounds.centerX;
-    const cy = bounds.centerY;
-    const r = Math.max(bounds.width, bounds.height) / 2 + 20;
-
-    // Fond de l'anneau
-    this.dwellGraphics.lineStyle(6, 0xffffff, 0.2);
-    this.dwellGraphics.beginPath();
-    this.dwellGraphics.arc(cx, cy, r, 0, Math.PI * 2);
-    this.dwellGraphics.strokePath();
-
-    // Arc de progression
-    const color = progress >= 1 ? 0x00ff00 : 0x00ff88;
-    this.dwellGraphics.lineStyle(6, color, 0.95);
-    this.dwellGraphics.beginPath();
-    this.dwellGraphics.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress);
-    this.dwellGraphics.strokePath();
+    this.cursors.update(this.handPositions);
+    this.btn.update(this.handPositions, delta);
   }
 
   private doStart() {

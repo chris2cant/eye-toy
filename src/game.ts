@@ -9,7 +9,7 @@ export const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: window.innerWidth,
   height: window.innerHeight,
-  backgroundColor: "#1a1a2e",
+  backgroundColor: "#05070D",
   scene: [BootScene, MenuScene, GameScene, UIScene, GameOverScene],
   scale: {
     mode: Phaser.Scale.RESIZE,

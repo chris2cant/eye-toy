@@ -7,7 +7,8 @@ export class BootScene extends Phaser.Scene {
 
   preload() {}
 
-  create() {
+  async create() {
+    await document.fonts.ready;
     this.scene.start("MenuScene");
   }
 }
