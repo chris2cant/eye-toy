@@ -1,4 +1,5 @@
 # AGENTS.md — eye-toy
+
 > Single source of truth for all tools (Claude Code, Cursor, Copilot, etc.)
 
 ## Project
@@ -7,14 +8,14 @@ Web game inspired by the PlayStation EyeToy. Live webcam feed, real-time hand/bo
 
 ## Stack
 
-| Layer | Lib | Version |
-|-------|-----|---------|
-| Detection | `@mediapipe/tasks-vision` | `^0.10.35` |
-| 2D rendering | Phaser 3 | `^3.x` |
-| Language | TypeScript | `^6.0` (strict) |
-| Bundler | Vite | `^8.0` |
-| Package manager | pnpm | `9.x` |
-| Tests | Playwright | `^1.59` (Chromium GPU) |
+| Layer           | Lib                       | Version                |
+| --------------- | ------------------------- | ---------------------- |
+| Detection       | `@mediapipe/tasks-vision` | `^0.10.35`             |
+| 2D rendering    | Phaser 3                  | `^3.x`                 |
+| Language        | TypeScript                | `^6.0` (strict)        |
+| Bundler         | Vite                      | `^8.0`                 |
+| Package manager | pnpm                      | `9.x`                  |
+| Tests           | Playwright                | `^1.59` (Chromium GPU) |
 
 ## Commands
 
@@ -82,20 +83,20 @@ Phaser scenes (GameScene, etc.)
 
 Always use Context7 before writing Phaser or MediaPipe code.
 
-| Lib | Context7 ID |
-|-----|-------------|
-| Phaser 3 (full API) | `/websites/phaser_io` |
-| MediaPipe Samples | `/google-ai-edge/mediapipe-samples` |
-| MediaPipe core | `/google-ai-edge/mediapipe` |
+| Lib                 | Context7 ID                         |
+| ------------------- | ----------------------------------- |
+| Phaser 3 (full API) | `/websites/phaser_io`               |
+| MediaPipe Samples   | `/google-ai-edge/mediapipe-samples` |
+| MediaPipe core      | `/google-ai-edge/mediapipe`         |
 
 ## Available MediaPipe models
 
-| Model | Landmarks | Use case |
-|-------|-----------|----------|
-| `HandLandmarker` | 21 pts/hand, 2 hands | Hand-based controls |
-| `FaceLandmarker` | 478 pts | Expressions, gaze |
-| `PoseLandmarker` | 33 body pts | Full-body gestures |
-| `HolisticLandmarker` | All-in-one | When all 3 are active simultaneously |
+| Model                | Landmarks            | Use case                             |
+| -------------------- | -------------------- | ------------------------------------ |
+| `HandLandmarker`     | 21 pts/hand, 2 hands | Hand-based controls                  |
+| `FaceLandmarker`     | 478 pts              | Expressions, gaze                    |
+| `PoseLandmarker`     | 33 body pts          | Full-body gestures                   |
+| `HolisticLandmarker` | All-in-one           | When all 3 are active simultaneously |
 
 ## Critical notes
 
@@ -103,3 +104,12 @@ Always use Context7 before writing Phaser or MediaPipe code.
 - `.wasm` files must be served with `Content-Type: application/wasm` — Vite does this natively.
 - MediaPipe loads models asynchronously; always await `landmarker.setOptions(...)` before starting the detection loop.
 - Phaser and MediaPipe each have their own loop — never block the main thread inside `HandTracker`.
+
+## Workflow de développement
+
+Quand l'utilisateur demande de continuer le dev :
+
+1. Lire `todo/ROADMAP.md` et identifier la prochaine story avec le statut `🔲 À faire`.
+2. Implémenter **une seule story** à la fois.
+3. Marquer la story `✅ Terminé` dans `ROADMAP.md` et dans son fichier `todo/US-XX-*.md`.
+4. Terminer le message par une section **"À tester"** listant exactement ce que l'utilisateur doit vérifier pour valider la story (étapes concrètes, ce qu'il doit voir/entendre). Attendre sa validation avant de passer à la story suivante.

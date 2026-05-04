@@ -1,19 +1,381 @@
 import Phaser from "phaser";
+import { HandTracker } from "../camera/HandTracker";
+import type { LandmarksPayload } from "../camera/HandTracker";
+import { AudioFX } from "../audio/AudioFX";
+
+const PALM_LANDMARK = 9;
+const CURSOR_COLORS = [0x00ff88, 0x00aaff];
+const GAME_DURATION = 10; // secondes
+
+const HIT_TOLERANCE = 20;
+const MAX_CIRCLES = 5;
+const SPAWN_TWEEN_MS = 200;
+const POP_TWEEN_MS = 150;
+const EXPIRE_TWEEN_MS = 300;
+const PALETTE = [0xff4444, 0x4488ff, 0x44ff88, 0xffdd00, 0xff8800, 0xaa44ff];
+
+interface DifficultyTier {
+  threshold: number;   // fraction du temps écoulé [0, 1)
+  spawnDelay: number;  // ms entre chaque spawn
+  radius: number;      // rayon du rond en px
+  expireDelay: number; // ms avant expiration
+  points: number;      // points pour attraper
+}
+
+const TIERS: DifficultyTier[] = [
+  { threshold: 0,    spawnDelay: 2000, radius: 40, expireDelay: 5000, points: 10 },
+  { threshold: 0.33, spawnDelay: 1500, radius: 33, expireDelay: 4000, points: 15 },
+  { threshold: 0.66, spawnDelay: 1000, radius: 26, expireDelay: 3000, points: 20 },
+];
+
+type GameCircle = Phaser.GameObjects.Arc & {
+  spawnTime: number;
+  expireTimer: Phaser.Time.TimerEvent;
+  expireDelay: number;
+  points: number;
+};
+
+const FLOAT_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
+  fontSize: "32px",
+  fontFamily: "monospace",
+  color: "#ffffff",
+  stroke: "#000000",
+  strokeThickness: 3,
+};
 
 export class GameScene extends Phaser.Scene {
+  private videoEl!: HTMLVideoElement;
+  private webcamTex!: Phaser.Textures.CanvasTexture;
+  private bg!: Phaser.GameObjects.Image;
+  private handTracker = new HandTracker();
+  private cursors: Phaser.GameObjects.Arc[] = [];
+  private circles: GameCircle[] = [];
+  private timerGraphics!: Phaser.GameObjects.Graphics;
+  private score = 0;
+  private timeLeft = GAME_DURATION;
+  private gameActive = false;
+  private currentTierIndex = 0;
+  private spawnTimer!: Phaser.Time.TimerEvent;
+
   constructor() {
     super({ key: "GameScene" });
   }
 
-  create() {
+  async create() {
     const { width, height } = this.scale;
 
-    this.add
-      .text(width / 2, height / 2, "Hello World", {
-        fontSize: "64px",
-        color: "#ffffff",
-        fontFamily: "monospace",
-      })
-      .setOrigin(0.5);
+    this.timerGraphics = this.add.graphics().setDepth(6);
+    this.cursors = CURSOR_COLORS.map((color) =>
+      this.add.circle(0, 0, 24, color, 0.8).setDepth(10).setVisible(false),
+    );
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+      this.videoEl = document.createElement("video");
+      this.videoEl.srcObject = stream;
+      this.videoEl.muted = true;
+      this.videoEl.playsInline = true;
+      await this.videoEl.play();
+
+      await new Promise<void>((resolve) => {
+        if (this.videoEl.readyState >= 1) {
+          resolve();
+        } else {
+          this.videoEl.onloadedmetadata = () => resolve();
+        }
+      });
+
+      const tex = this.textures.createCanvas("webcam", width, height);
+      if (!tex) throw new Error("createCanvas returned null");
+      this.webcamTex = tex;
+      this.bg = this.add.image(width / 2, height / 2, "webcam").setDepth(-10);
+
+      this.scale.on("resize", this.onResize, this);
+
+      await this.handTracker.init(this.videoEl);
+      this.handTracker.on("landmarks", this.onLandmarks, this);
+      this.handTracker.start();
+
+      this.runCountdown();
+    } catch (err) {
+      console.error("[GameScene] erreur d'initialisation:", err);
+      this.add
+        .text(width / 2, height / 2, "Caméra refusée\nVeuillez autoriser l'accès à la webcam", {
+          fontSize: "32px",
+          color: "#ff4444",
+          fontFamily: "monospace",
+          align: "center",
+        })
+        .setOrigin(0.5);
+    }
+  }
+
+  private get tier(): DifficultyTier {
+    return TIERS[this.currentTierIndex];
+  }
+
+  private runCountdown() {
+    const { width, height } = this.scale;
+    const steps = ["3", "2", "1", "GO!"];
+    let i = 0;
+
+    const showNext = () => {
+      if (i >= steps.length) {
+        this.startGame();
+        return;
+      }
+      const isGo = steps[i] === "GO!";
+      const txt = this.add
+        .text(width / 2, height / 2, steps[i], {
+          fontSize: "160px",
+          fontFamily: "monospace",
+          color: isGo ? "#00ff88" : "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 8,
+        })
+        .setOrigin(0.5)
+        .setScale(2)
+        .setDepth(20);
+
+      i++;
+      this.tweens.add({
+        targets: txt,
+        scale: 1,
+        duration: 400,
+        ease: "Power2.Out",
+        onComplete: () => {
+          this.time.delayedCall(isGo ? 400 : 500, () => {
+            this.tweens.add({
+              targets: txt,
+              alpha: 0,
+              duration: 200,
+              onComplete: () => { txt.destroy(); showNext(); },
+            });
+          });
+        },
+      });
+    };
+
+    showNext();
+  }
+
+  private startGame() {
+    this.currentTierIndex = 0;
+    this.scene.launch("UIScene");
+    this.game.events.emit("score:update", 0);
+    this.game.events.emit("timer:update", GAME_DURATION);
+
+    this.spawnTimer = this.time.addEvent({
+      delay: this.tier.spawnDelay,
+      loop: true,
+      callback: this.spawnCircle,
+      callbackScope: this,
+    });
+
+    this.gameActive = true;
+    this.time.addEvent({
+      delay: 1000,
+      repeat: GAME_DURATION - 1,
+      callback: this.onTick,
+      callbackScope: this,
+    });
+  }
+
+  private onTick() {
+    this.timeLeft -= 1;
+    this.game.events.emit("timer:update", this.timeLeft);
+
+    const elapsed = (GAME_DURATION - this.timeLeft) / GAME_DURATION;
+    const newTierIndex = TIERS.reduce(
+      (best, t, i) => (elapsed >= t.threshold ? i : best),
+      0,
+    );
+
+    if (newTierIndex !== this.currentTierIndex) {
+      this.currentTierIndex = newTierIndex;
+      this.spawnTimer.reset({
+        delay: this.tier.spawnDelay,
+        loop: true,
+        callback: this.spawnCircle,
+        callbackScope: this,
+      });
+    }
+
+    if (this.timeLeft <= 0) this.endGame();
+  }
+
+  private endGame() {
+    this.gameActive = false;
+    this.handTracker.stop();
+    this.circles.forEach((c) => { c.expireTimer.destroy(); c.destroy(); });
+    this.circles = [];
+    this.scene.stop("UIScene");
+    this.scene.start("GameOverScene", { score: this.score });
+  }
+
+  private spawnCircle() {
+    if (!this.gameActive || this.circles.length >= MAX_CIRCLES) return;
+
+    const { width, height } = this.scale;
+    const { radius, expireDelay, points } = this.tier;
+    const margin = radius + 10;
+    const x = Phaser.Math.Between(margin, width - margin);
+    const y = Phaser.Math.Between(margin, height - margin);
+    const color = Phaser.Utils.Array.GetRandom(PALETTE) as number;
+
+    const circle = this.add.circle(x, y, radius, color) as GameCircle;
+    circle.setDepth(5).setScale(0);
+    circle.spawnTime = this.time.now;
+    circle.expireDelay = expireDelay;
+    circle.points = points;
+    circle.expireTimer = this.time.addEvent({
+      delay: expireDelay,
+      callback: () => {
+        const idx = this.circles.indexOf(circle);
+        if (idx !== -1) this.expireCircle(idx);
+      },
+    });
+
+    this.circles.push(circle);
+    this.tweens.add({ targets: circle, scale: 1, duration: SPAWN_TWEEN_MS, ease: "Back.Out" });
+  }
+
+  private onLandmarks({ hands }: LandmarksPayload) {
+    const { width, height } = this.scale;
+    this.cursors.forEach((cursor, i) => {
+      const hand = hands[i];
+      if (!hand) { cursor.setVisible(false); return; }
+      const lm = hand[PALM_LANDMARK];
+      const hx = (1 - lm.x) * width;
+      const hy = lm.y * height;
+      cursor.setPosition(hx, hy).setVisible(true);
+      this.checkCollisions(hx, hy);
+    });
+  }
+
+  private checkCollisions(hx: number, hy: number) {
+    if (!this.gameActive) return;
+    for (let i = this.circles.length - 1; i >= 0; i--) {
+      const circle = this.circles[i];
+      if (!circle.active) continue;
+      const dist = Phaser.Math.Distance.Between(hx, hy, circle.x, circle.y);
+      if (dist < circle.radius + HIT_TOLERANCE) {
+        this.popCircle(i);
+      }
+    }
+  }
+
+  private popCircle(index: number) {
+    const circle = this.circles[index];
+    circle.setActive(false);
+    circle.expireTimer.destroy();
+    this.circles.splice(index, 1);
+
+    const pts = circle.points;
+    this.score = Math.max(0, this.score + pts);
+    this.game.events.emit("score:update", this.score);
+    this.spawnFloatText(circle.x, circle.y, `+${pts}`, "#ffff00");
+    AudioFX.pop();
+
+    this.tweens.add({
+      targets: circle,
+      scale: 0,
+      alpha: 0,
+      duration: POP_TWEEN_MS,
+      ease: "Power2.In",
+      onComplete: () => circle.destroy(),
+    });
+  }
+
+  private spawnFloatText(x: number, y: number, label: string, color: string) {
+    const txt = this.add
+      .text(x, y, label, { ...FLOAT_TEXT_STYLE, color })
+      .setOrigin(0.5)
+      .setDepth(15);
+
+    this.tweens.add({
+      targets: txt,
+      y: y - 60,
+      alpha: 0,
+      duration: 600,
+      ease: "Power1.Out",
+      onComplete: () => txt.destroy(),
+    });
+  }
+
+  private expireCircle(index: number) {
+    const circle = this.circles[index];
+    circle.setActive(false);
+    this.circles.splice(index, 1);
+
+    this.score = Math.max(0, this.score - 5);
+    this.game.events.emit("score:update", this.score);
+    this.spawnFloatText(circle.x, circle.y, "-5", "#ff4444");
+    AudioFX.expire();
+
+    this.tweens.add({
+      targets: circle,
+      fillColor: 0xff0000,
+      duration: EXPIRE_TWEEN_MS / 2,
+      ease: "Linear",
+      onComplete: () => {
+        this.tweens.add({
+          targets: circle,
+          scale: 0,
+          alpha: 0,
+          duration: EXPIRE_TWEEN_MS / 2,
+          ease: "Power2.In",
+          onComplete: () => circle.destroy(),
+        });
+      },
+    });
+  }
+
+  private onResize(gameSize: Phaser.Structs.Size) {
+    if (!this.webcamTex) return;
+    this.webcamTex.setSize(gameSize.width, gameSize.height);
+    this.bg.setPosition(gameSize.width / 2, gameSize.height / 2);
+  }
+
+  update() {
+    if (!this.webcamTex || !this.videoEl || this.videoEl.readyState < 2) return;
+
+    const ctx = this.webcamTex.getContext();
+    const { width, height } = this.scale;
+
+    const vw = this.videoEl.videoWidth;
+    const vh = this.videoEl.videoHeight;
+    if (!vw || !vh) return;
+
+    const scale = Math.max(width / vw, height / vh);
+    const srcW = width / scale;
+    const srcH = height / scale;
+    const srcX = (vw - srcW) / 2;
+    const srcY = (vh - srcH) / 2;
+
+    ctx.save();
+    ctx.translate(width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(this.videoEl, srcX, srcY, srcW, srcH, 0, 0, width, height);
+    ctx.restore();
+    this.webcamTex.refresh();
+
+    this.timerGraphics.clear();
+    for (const circle of this.circles) {
+      if (!circle.active) continue;
+      const elapsed = this.time.now - circle.spawnTime;
+      const remaining = 1 - Math.min(elapsed / circle.expireDelay, 1);
+      if (remaining <= 0) continue;
+
+      const startAngle = -Math.PI / 2;
+      const endAngle = startAngle + 2 * Math.PI * remaining;
+      const arcColor = remaining > 0.4 ? 0xffffff : 0xff6600;
+
+      this.timerGraphics.lineStyle(4, arcColor, 0.9);
+      this.timerGraphics.beginPath();
+      this.timerGraphics.arc(circle.x, circle.y, circle.radius + 6, startAngle, endAngle, false);
+      this.timerGraphics.strokePath();
+    }
   }
 }
