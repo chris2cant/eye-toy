@@ -29,7 +29,9 @@ const TIERS: DifficultyTier[] = [
   { threshold: 0.66, spawnDelay: 1000, radius: 26, expireDelay: 3000, points: 20 },
 ];
 
-type GameCircle = Phaser.GameObjects.Arc & {
+type GameCircle = Phaser.GameObjects.Graphics & {
+  radius: number;
+  circleColor: number;
   spawnTime: number;
   expireTimer: Phaser.Time.TimerEvent;
   expireDelay: number;
@@ -62,6 +64,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   async create() {
+    // Réinitialiser avant tout await pour éviter que update() utilise l'ancienne texture détruite
+    this.webcamTex = null!;
+    this.videoEl = null!;
+
     const { width, height } = this.scale;
 
     this.timerGraphics = this.add.graphics().setDepth(6);
@@ -154,6 +160,8 @@ export class GameScene extends Phaser.Scene {
 
   private startGame() {
     this.currentTierIndex = 0;
+    this.timeLeft = GAME_DURATION;
+    this.score = 0;
     this.scene.launch("UIScene");
     this.game.events.emit("score:update", 0);
     this.game.events.emit("timer:update", GAME_DURATION);
@@ -210,13 +218,17 @@ export class GameScene extends Phaser.Scene {
 
     const { width, height } = this.scale;
     const { radius, expireDelay, points } = this.tier;
-    const margin = radius + 10;
+    const margin = radius + 20;
     const x = Phaser.Math.Between(margin, width - margin);
     const y = Phaser.Math.Between(margin, height - margin);
     const color = Phaser.Utils.Array.GetRandom(PALETTE) as number;
 
-    const circle = this.add.circle(x, y, radius, color) as GameCircle;
-    circle.setDepth(5).setScale(0);
+    const circle = this.add.graphics() as GameCircle;
+    circle.setPosition(x, y).setDepth(DEPTH.game).setScale(0);
+    circle.radius = radius;
+    circle.circleColor = color;
+    this.drawReticle(circle, color, radius);
+
     circle.spawnTime = this.time.now;
     circle.expireDelay = expireDelay;
     circle.points = points;
@@ -230,6 +242,40 @@ export class GameScene extends Phaser.Scene {
 
     this.circles.push(circle);
     this.tweens.add({ targets: circle, scale: 1, duration: SPAWN_TWEEN_MS, ease: "Back.Out" });
+  }
+
+  private drawReticle(gfx: Phaser.GameObjects.Graphics, color: number, r: number) {
+    gfx.clear();
+
+    // Fill translucide
+    gfx.fillStyle(color, 0.10);
+    gfx.fillCircle(0, 0, r);
+
+    // Anneau extérieur halo (légèrement plus grand, très transparent)
+    gfx.lineStyle(6, color, 0.08);
+    gfx.strokeCircle(0, 0, r + 4);
+
+    // Anneau extérieur principal
+    gfx.lineStyle(2, color, 1.0);
+    gfx.strokeCircle(0, 0, r);
+
+    // Anneau intérieur (targeting)
+    gfx.lineStyle(1, color, 0.35);
+    gfx.strokeCircle(0, 0, r * 0.55);
+
+    // 4 tick marks aux 4 points cardinaux
+    const tickOuter = r + 8;
+    const tickInner = r + 2;
+    gfx.lineStyle(2, color, 0.85);
+    for (const angle of [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2]) {
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      gfx.lineBetween(cos * tickInner, sin * tickInner, cos * tickOuter, sin * tickOuter);
+    }
+
+    // Point central brillant
+    gfx.fillStyle(color, 1.0);
+    gfx.fillCircle(0, 0, r * 0.10);
   }
 
   private onLandmarks({ hands }: LandmarksPayload) {
@@ -309,21 +355,15 @@ export class GameScene extends Phaser.Scene {
     this.spawnFloatText(circle.x, circle.y, "-5", "#ff4444");
     AudioFX.expire();
 
+    // Flash en rouge puis disparaît
+    this.drawReticle(circle, HEX.danger, circle.radius);
     this.tweens.add({
       targets: circle,
-      fillColor: 0xff0000,
-      duration: EXPIRE_TWEEN_MS / 2,
-      ease: "Linear",
-      onComplete: () => {
-        this.tweens.add({
-          targets: circle,
-          scale: 0,
-          alpha: 0,
-          duration: EXPIRE_TWEEN_MS / 2,
-          ease: "Power2.In",
-          onComplete: () => circle.destroy(),
-        });
-      },
+      scale: 0,
+      alpha: 0,
+      duration: EXPIRE_TWEEN_MS,
+      ease: "Power2.In",
+      onComplete: () => circle.destroy(),
     });
   }
 
@@ -337,6 +377,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.webcamTex || !this.videoEl || this.videoEl.readyState < 2) return;
 
     const ctx = this.webcamTex.getContext();
+    if (!ctx) return;
     const { width, height } = this.scale;
 
     const vw = this.videoEl.videoWidth;

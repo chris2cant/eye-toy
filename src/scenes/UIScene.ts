@@ -52,19 +52,25 @@ export class UIScene extends Phaser.Scene {
       .setOrigin(1, 0)
       .setDepth(DEPTH.topUi);
 
-    this.game.events.on("score:update", (score: number) => {
-      this.scoreValue.setText(String(score));
-    });
+    this.game.events.on("score:update", this.onScoreUpdate, this);
+    this.game.events.on("timer:update", this.onTimerUpdate, this);
 
-    this.game.events.on("timer:update", (seconds: number) => {
-      const s = Math.max(0, seconds);
-      const mm = String(Math.floor(s / 60)).padStart(2, "0");
-      const ss = String(s % 60).padStart(2, "0");
-      const timeStr = `${mm}:${ss}`;
-      this.timerText.setText(timeStr);
-      // Passe en rouge quand il reste peu de temps
-      this.timerText.setColor(s <= 10 ? COLOR.danger : COLOR.textPrimary);
+    this.events.once("shutdown", () => {
+      this.game.events.off("score:update", this.onScoreUpdate, this);
+      this.game.events.off("timer:update", this.onTimerUpdate, this);
     });
+  }
+
+  private onScoreUpdate(score: number) {
+    this.scoreValue.setText(String(score));
+  }
+
+  private onTimerUpdate(seconds: number) {
+    const s = Math.max(0, seconds);
+    const mm = String(Math.floor(s / 60)).padStart(2, "0");
+    const ss = String(s % 60).padStart(2, "0");
+    this.timerText.setText(`${mm}:${ss}`);
+    this.timerText.setColor(s <= 10 ? COLOR.danger : COLOR.textPrimary);
   }
 
   private drawPanel(x: number, y: number, w: number, h: number) {
