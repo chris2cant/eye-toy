@@ -2,6 +2,17 @@ import Phaser from "phaser";
 import { HEX, COLOR, FONT } from "./tokens";
 
 const CORNER = 10;
+const SHAKE_THRESHOLD = 4;
+
+export type DwellButtonConfig = {
+  label: string;
+  onActivate: () => void;
+  dwellMs?: number;
+  drainMs?: number;
+  zonePad?: number;
+  depth?: number;
+  fontSize?: string;
+};
 
 export class DwellButton extends Phaser.GameObjects.Container {
   private _bg!: Phaser.GameObjects.Graphics;
@@ -11,8 +22,9 @@ export class DwellButton extends Phaser.GameObjects.Container {
   private _h = 0;
   private _progress = 0;
   private _activated = false;
+  private _prevPositions: ({ x: number; y: number } | null)[] = [null, null];
 
-  private readonly _dwellMs: number;
+  private readonly _chargeMs: number;
   private readonly _drainMs: number;
   private readonly _zonePad: number;
   private readonly _onActivate: () => void;
@@ -21,21 +33,19 @@ export class DwellButton extends Phaser.GameObjects.Container {
     scene: Phaser.Scene,
     x: number,
     y: number,
-    label: string,
-    onActivate: () => void,
-    opts: { dwellMs?: number; drainMs?: number; zonePad?: number; depth?: number } = {},
+    config: DwellButtonConfig,
   ) {
     super(scene, x, y);
-    this._onActivate = onActivate;
-    this._dwellMs = opts.dwellMs ?? 1500;
-    this._drainMs = opts.drainMs ?? 600;
-    this._zonePad = opts.zonePad ?? 60;
+    this._onActivate = config.onActivate;
+    this._chargeMs = config.dwellMs ?? 1200;
+    this._drainMs = config.drainMs ?? 500;
+    this._zonePad = config.zonePad ?? 60;
 
     this._bg = scene.add.graphics();
     this._ring = scene.add.graphics();
     this._label = scene.add
-      .text(0, 0, label, {
-        fontSize: "44px",
+      .text(0, 0, config.label, {
+        fontSize: config.fontSize ?? "44px",
         fontFamily: FONT.identity,
         color: COLOR.textPrimary,
         padding: { x: 32, y: 16 },
@@ -49,7 +59,7 @@ export class DwellButton extends Phaser.GameObjects.Container {
     this.add([this._bg, this._label, this._ring]);
     scene.add.existing(this);
 
-    if (opts.depth !== undefined) this.setDepth(opts.depth);
+    if (config.depth !== undefined) this.setDepth(config.depth);
 
     this.setInteractive();
     this.on("pointerdown", () => this._fire());
@@ -66,62 +76,61 @@ export class DwellButton extends Phaser.GameObjects.Container {
   }
 
   private _drawBg(active: boolean) {
-    const g = this._bg;
+    const gfx = this._bg;
     const hw = this._w / 2;
     const hh = this._h / 2;
 
-    g.clear();
+    gfx.clear();
 
-    g.fillStyle(active ? HEX.brandPrimaryMuted : HEX.bgElevated, active ? 0.9 : 0.92);
-    g.fillRect(-hw, -hh, this._w, this._h);
+    gfx.fillStyle(active ? HEX.brandPrimaryMuted : HEX.bgElevated, active ? 0.9 : 0.92);
+    gfx.fillRect(-hw, -hh, this._w, this._h);
 
-    g.lineStyle(active ? 2 : 1.5, HEX.brandPrimary, active ? 1 : 0.65);
-    g.strokeRect(-hw, -hh, this._w, this._h);
+    gfx.lineStyle(active ? 2 : 1.5, HEX.brandPrimary, active ? 1 : 0.65);
+    gfx.strokeRect(-hw, -hh, this._w, this._h);
 
-    // Corner L-accents
-    g.lineStyle(2.5, HEX.brandPrimary, 1);
-    g.beginPath();
-    g.moveTo(-hw, -hh + CORNER);
-    g.lineTo(-hw, -hh);
-    g.lineTo(-hw + CORNER, -hh);
-    g.strokePath();
+    gfx.lineStyle(2.5, HEX.brandPrimary, 1);
+    gfx.beginPath();
+    gfx.moveTo(-hw, -hh + CORNER);
+    gfx.lineTo(-hw, -hh);
+    gfx.lineTo(-hw + CORNER, -hh);
+    gfx.strokePath();
 
-    g.beginPath();
-    g.moveTo(hw - CORNER, -hh);
-    g.lineTo(hw, -hh);
-    g.lineTo(hw, -hh + CORNER);
-    g.strokePath();
+    gfx.beginPath();
+    gfx.moveTo(hw - CORNER, -hh);
+    gfx.lineTo(hw, -hh);
+    gfx.lineTo(hw, -hh + CORNER);
+    gfx.strokePath();
 
-    g.beginPath();
-    g.moveTo(-hw, hh - CORNER);
-    g.lineTo(-hw, hh);
-    g.lineTo(-hw + CORNER, hh);
-    g.strokePath();
+    gfx.beginPath();
+    gfx.moveTo(-hw, hh - CORNER);
+    gfx.lineTo(-hw, hh);
+    gfx.lineTo(-hw + CORNER, hh);
+    gfx.strokePath();
 
-    g.beginPath();
-    g.moveTo(hw - CORNER, hh);
-    g.lineTo(hw, hh);
-    g.lineTo(hw, hh - CORNER);
-    g.strokePath();
+    gfx.beginPath();
+    gfx.moveTo(hw - CORNER, hh);
+    gfx.lineTo(hw, hh);
+    gfx.lineTo(hw, hh - CORNER);
+    gfx.strokePath();
   }
 
   private _drawRing() {
-    const g = this._ring;
-    g.clear();
+    const gfx = this._ring;
+    gfx.clear();
     if (this._progress <= 0) return;
 
-    const r = Math.max(this._w, this._h) / 2 + 24;
+    const ringRadius = Math.max(this._w, this._h) / 2 + 24;
 
-    g.lineStyle(4, HEX.textPrimary, 0.12);
-    g.beginPath();
-    g.arc(0, 0, r, 0, Math.PI * 2);
-    g.strokePath();
+    gfx.lineStyle(4, HEX.textPrimary, 0.12);
+    gfx.beginPath();
+    gfx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+    gfx.strokePath();
 
     const color = this._progress >= 1 ? HEX.success : HEX.brandPrimary;
-    g.lineStyle(4, color, 0.9);
-    g.beginPath();
-    g.arc(0, 0, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * this._progress);
-    g.strokePath();
+    gfx.lineStyle(4, color, 0.9);
+    gfx.beginPath();
+    gfx.arc(0, 0, ringRadius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * this._progress);
+    gfx.strokePath();
   }
 
   update(hands: ({ x: number; y: number } | null)[], delta: number) {
@@ -130,24 +139,51 @@ export class DwellButton extends Phaser.GameObjects.Container {
     const hw = this._w / 2 + this._zonePad;
     const hh = this._h / 2 + this._zonePad;
 
-    const handOver = hands.some(
-      (p) => p !== null && Math.abs(p.x - this.x) < hw && Math.abs(p.y - this.y) < hh,
-    );
+    let totalMotion = 0;
+    let handInZone = false;
 
-    if (handOver) {
-      this._progress = Math.min(1, this._progress + delta / this._dwellMs);
+    hands.forEach((hand, i) => {
+      if (hand === null) {
+        this._prevPositions[i] = null;
+        return;
+      }
+
+      const inZone = Math.abs(hand.x - this.x) < hw && Math.abs(hand.y - this.y) < hh;
+
+      if (inZone) {
+        handInZone = true;
+        const prev = this._prevPositions[i];
+        if (prev !== null) {
+          const dx = hand.x - prev.x;
+          const dy = hand.y - prev.y;
+          totalMotion += Math.sqrt(dx * dx + dy * dy);
+        }
+      }
+
+      this._prevPositions[i] = hand;
+    });
+
+    const isShaking = handInZone && totalMotion > SHAKE_THRESHOLD;
+
+    if (isShaking) {
+      this._progress = Math.min(1, this._progress + delta / this._chargeMs);
       if (this._progress >= 1) this._fire();
     } else {
       this._progress = Math.max(0, this._progress - delta / this._drainMs);
     }
 
-    this._drawBg(handOver);
+    const scale = 1 + this._progress * 0.4;
+    this.setScale(scale);
+
+    this._drawBg(handInZone);
     this._drawRing();
   }
 
   reset() {
     this._progress = 0;
     this._activated = false;
+    this._prevPositions = [null, null];
+    this.setScale(1);
     this._drawBg(false);
     this._drawRing();
   }

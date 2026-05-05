@@ -1,18 +1,50 @@
 import Phaser from "phaser";
 import { handTracker } from "../camera/HandTracker";
 import type { LandmarksPayload } from "../camera/HandTracker";
-import { AudioFX } from "../audio/AudioFX";
+import { audioFX } from "../audio/AudioFX";
 import { COLOR, HEX, FONT, DEPTH } from "../design-system/tokens";
 import { DwellButton } from "../design-system/DwellButton";
 import { HandCursors } from "../design-system/HandCursors";
 
 const PALM_LANDMARK = 9;
 
+interface GameEntry {
+  key: string;
+  name: string;
+  desc: string;
+  tag: string;
+}
+
+const GAMES: GameEntry[] = [
+  {
+    key: "GameScene",
+    name: "Attrape les tous",
+    desc: "Attrape les ronds avec tes mains\navant qu'ils disparaissent !",
+    tag: "ACTION",
+  },
+  {
+    key: "SkeletonScene",
+    name: "Squelette",
+    desc: "Visualisation filaire de ton corps\nen temps réel par MediaPipe.",
+    tag: "DÉMO",
+  },
+];
+
 export class MenuScene extends Phaser.Scene {
   private webcamTex: Phaser.Textures.CanvasTexture | null = null;
   private cursors!: HandCursors;
-  private btn!: DwellButton;
+  private btnPrev!: DwellButton;
+  private btnNext!: DwellButton;
+  private btnSelect!: DwellButton;
+  private allBtns: DwellButton[] = [];
   private handPositions: ({ x: number; y: number } | null)[] = [null, null];
+  private currentIndex = 0;
+
+  private cardGfx!: Phaser.GameObjects.Graphics;
+  private cardTag!: Phaser.GameObjects.Text;
+  private cardTitle!: Phaser.GameObjects.Text;
+  private cardDesc!: Phaser.GameObjects.Text;
+  private dots: Phaser.GameObjects.Text[] = [];
 
   constructor() {
     super({ key: "MenuScene" });
@@ -21,119 +53,187 @@ export class MenuScene extends Phaser.Scene {
   create() {
     const { width, height } = this.scale;
     const cx = width / 2;
-    const best = parseInt(localStorage.getItem("eyetoy_best") ?? "0", 10);
-
+    this.currentIndex = 0;
     this.handPositions = [null, null];
 
     this.setupWebcam(width, height);
-
-    // Overlay semi-transparent
-    this.add
-      .rectangle(cx, height / 2, width, height, HEX.bgCanvas, 0.6)
-      .setDepth(DEPTH.bg);
-
+    this.add.rectangle(cx, height / 2, width, height, HEX.bgCanvas, 0.65).setDepth(DEPTH.bg);
     this.drawHudDecorations(width, height);
 
-    // Titre
     this.add
-      .text(cx, height * 0.17, "EYE TOY", {
-        fontSize: "88px",
+      .text(cx, height * 0.10, "EYE TOY", {
+        fontSize: "72px",
         fontFamily: FONT.identity,
         fontStyle: "900",
         color: COLOR.brandPrimary,
-        shadow: {
-          offsetX: 0,
-          offsetY: 0,
-          color: COLOR.brandPrimary,
-          blur: 24,
-          fill: true,
-        },
+        shadow: { offsetX: 0, offsetY: 0, color: COLOR.brandPrimary, blur: 24, fill: true },
       })
       .setOrigin(0.5)
       .setDepth(DEPTH.hud);
 
-    // Sous-titre
-    this.add
-      .text(cx, height * 0.28, "Attrape les ronds avec tes mains !", {
-        fontSize: "20px",
-        fontFamily: FONT.ui,
-        color: COLOR.textSecondary,
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH.hud);
+    this.buildButtons(width, height, cx);
+    this.buildCard(width, height, cx);
+    this.buildDots(width, height, cx);
 
-    // Règles
-    this.addRuleRow(cx, height * 0.39, "+10 pts", "par rond attrapé", COLOR.success);
-    this.addRuleRow(cx, height * 0.47, "−5 pts", "si un rond expire", COLOR.danger);
+    const best = parseInt(localStorage.getItem("eyetoy_best") ?? "0", 10);
+    if (best > 0) this.addScorePill(cx, height * 0.84, best);
 
-    // Meilleur score
-    if (best > 0) {
-      this.addScorePill(cx, height * 0.59, best);
-    }
-
-    // Bouton JOUER
-    this.btn = new DwellButton(
-      this,
-      cx,
-      height * 0.73,
-      "  JOUER  →",
-      () => {
-        AudioFX.pop();
-        this.doStart();
-      },
-      { depth: DEPTH.hud },
-    );
-
-    // Indice dwell
-    this.add
-      .text(cx, height * 0.73 + this.btn.height / 2 + 22, "✋  Maintiens la main sur le bouton", {
-        fontSize: "16px",
-        fontFamily: FONT.ui,
-        color: COLOR.textMuted,
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH.hud);
+    this.updateCard();
 
     this.cursors = new HandCursors(this, DEPTH.cursor);
     this.setupHandTracking();
   }
 
-  private addRuleRow(cx: number, y: number, value: string, label: string, color: string) {
-    const g = this.add.graphics().setDepth(DEPTH.hud);
-    const panelW = 320;
-    const panelH = 38;
-    g.fillStyle(HEX.bgElevated, 0.85);
-    g.fillRect(cx - panelW / 2, y - panelH / 2, panelW, panelH);
-    g.lineStyle(1, HEX.bgSurface, 1);
-    g.strokeRect(cx - panelW / 2, y - panelH / 2, panelW, panelH);
+  private buildButtons(width: number, height: number, cx: number) {
+    const btnY = height * 0.30;
+
+    this.btnPrev = new DwellButton(this, width * 0.10, btnY, {
+      label: "◀",
+      fontSize: "28px",
+      onActivate: () => { this.navigate(-1); this.btnPrev.reset(); },
+      depth: DEPTH.hud,
+      dwellMs: 900,
+    });
+
+    this.btnSelect = new DwellButton(this, cx, btnY, {
+      label: "  JOUER  →",
+      onActivate: () => { audioFX.pop(); this.doStart(); },
+      depth: DEPTH.hud,
+    });
+
+    this.btnNext = new DwellButton(this, width * 0.90, btnY, {
+      label: "▶",
+      fontSize: "28px",
+      onActivate: () => { this.navigate(1); this.btnNext.reset(); },
+      depth: DEPTH.hud,
+      dwellMs: 900,
+    });
+
+    this.allBtns = [this.btnPrev, this.btnSelect, this.btnNext];
 
     this.add
-      .text(cx - 100, y, value, {
-        fontSize: "18px",
-        fontFamily: FONT.identity,
-        color,
+      .text(cx, height * 0.30 + 52, "✋  Agite la main sur le bouton", {
+        fontSize: "15px",
+        fontFamily: FONT.ui,
+        color: COLOR.textMuted,
+      })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.hud);
+  }
+
+  private buildCard(width: number, height: number, cx: number) {
+    const cardW = Math.min(480, width * 0.55);
+    const cardH = 160;
+    const cardCy = height * 0.55;
+
+    this.cardGfx = this.add.graphics().setDepth(DEPTH.hud - 1);
+
+    this.cardTag = this.add
+      .text(cx, cardCy - 54, "", {
+        fontSize: "10px",
+        fontFamily: FONT.ui,
+        color: COLOR.brandPrimary,
+        letterSpacing: 3,
       })
       .setOrigin(0.5)
       .setDepth(DEPTH.hud);
 
-    this.add
-      .text(cx + 30, y, label, {
+    this.cardTitle = this.add
+      .text(cx, cardCy - 18, "", {
+        fontSize: "36px",
+        fontFamily: FONT.identity,
+        fontStyle: "700",
+        color: COLOR.textPrimary,
+      })
+      .setOrigin(0.5)
+      .setDepth(DEPTH.hud);
+
+    this.cardDesc = this.add
+      .text(cx, cardCy + 36, "", {
         fontSize: "15px",
         fontFamily: FONT.ui,
         color: COLOR.textSecondary,
+        align: "center",
+        lineSpacing: 4,
       })
-      .setOrigin(0, 0.5)
+      .setOrigin(0.5)
       .setDepth(DEPTH.hud);
+
+    this._cardW = cardW;
+    this._cardH = cardH;
+    this._cardCy = cardCy;
+  }
+
+  private _cardW = 480;
+  private _cardH = 160;
+  private _cardCy = 0;
+
+  private buildDots(width: number, height: number, cx: number) {
+    this.dots = [];
+    const spacing = 22;
+    const startX = cx - ((GAMES.length - 1) * spacing) / 2;
+    for (let i = 0; i < GAMES.length; i++) {
+      const dot = this.add
+        .text(startX + i * spacing, height * 0.72, "●", {
+          fontSize: "12px",
+          fontFamily: FONT.ui,
+          color: COLOR.textMuted,
+        })
+        .setOrigin(0.5)
+        .setDepth(DEPTH.hud);
+      this.dots.push(dot);
+    }
+  }
+
+  private updateCard() {
+    const game = GAMES[this.currentIndex];
+    const { width } = this.scale;
+    const cx = width / 2;
+
+    this.cardGfx.clear();
+    this.cardGfx.fillStyle(HEX.bgElevated, 0.92);
+    this.cardGfx.fillRect(cx - this._cardW / 2, this._cardCy - this._cardH / 2, this._cardW, this._cardH);
+    this.cardGfx.lineStyle(1.5, HEX.brandPrimary, 0.5);
+    this.cardGfx.strokeRect(cx - this._cardW / 2, this._cardCy - this._cardH / 2, this._cardW, this._cardH);
+
+    // Corner accents
+    const cw = this._cardW / 2;
+    const ch = this._cardH / 2;
+    const accent = 12;
+    this.cardGfx.lineStyle(2.5, HEX.brandPrimary, 1);
+    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const ox = cx + sx * cw;
+      const oy = this._cardCy + sy * ch;
+      this.cardGfx.beginPath();
+      this.cardGfx.moveTo(ox, oy + sy * accent);
+      this.cardGfx.lineTo(ox, oy);
+      this.cardGfx.lineTo(ox - sx * accent, oy);
+      this.cardGfx.strokePath();
+    }
+
+    this.cardTag.setText(game.tag);
+    this.cardTitle.setText(game.name);
+    this.cardDesc.setText(game.desc);
+
+    this.dots.forEach((dot, i) => {
+      dot.setColor(i === this.currentIndex ? COLOR.brandPrimary : COLOR.textMuted);
+      dot.setFontSize(i === this.currentIndex ? "18px" : "12px");
+    });
+  }
+
+  private navigate(dir: number) {
+    this.currentIndex = (this.currentIndex + dir + GAMES.length) % GAMES.length;
+    this.updateCard();
   }
 
   private addScorePill(cx: number, y: number, best: number) {
-    const g = this.add.graphics().setDepth(DEPTH.hud);
+    const gfx = this.add.graphics().setDepth(DEPTH.hud);
     const panelW = 300;
     const panelH = 42;
-    g.fillStyle(HEX.bgElevated, 0.9);
-    g.fillRect(cx - panelW / 2, y - panelH / 2, panelW, panelH);
-    g.lineStyle(1.5, HEX.warning, 0.6);
-    g.strokeRect(cx - panelW / 2, y - panelH / 2, panelW, panelH);
+    gfx.fillStyle(HEX.bgElevated, 0.9);
+    gfx.fillRect(cx - panelW / 2, y - panelH / 2, panelW, panelH);
+    gfx.lineStyle(1.5, HEX.warning, 0.6);
+    gfx.strokeRect(cx - panelW / 2, y - panelH / 2, panelW, panelH);
 
     this.add
       .text(cx - 30, y, "MEILLEUR", {
@@ -156,25 +256,22 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private drawHudDecorations(width: number, height: number) {
-    const g = this.add.graphics().setDepth(DEPTH.bg);
+    const gfx = this.add.graphics().setDepth(DEPTH.bg);
 
-    // Réticule coin haut-gauche
-    const drawReticle = (x: number, y: number, r: number, alpha: number) => {
-      g.lineStyle(1, HEX.brandPrimary, alpha);
-      g.beginPath();
-      g.arc(x, y, r, 0, Math.PI * 2);
-      g.strokePath();
-
-      // Croix centrale
-      g.lineStyle(1, HEX.brandPrimary, alpha * 0.6);
-      g.beginPath();
-      g.moveTo(x - r * 0.35, y);
-      g.lineTo(x + r * 0.35, y);
-      g.strokePath();
-      g.beginPath();
-      g.moveTo(x, y - r * 0.35);
-      g.lineTo(x, y + r * 0.35);
-      g.strokePath();
+    const drawReticle = (x: number, y: number, radius: number, alpha: number) => {
+      gfx.lineStyle(1, HEX.brandPrimary, alpha);
+      gfx.beginPath();
+      gfx.arc(x, y, radius, 0, Math.PI * 2);
+      gfx.strokePath();
+      gfx.lineStyle(1, HEX.brandPrimary, alpha * 0.6);
+      gfx.beginPath();
+      gfx.moveTo(x - radius * 0.35, y);
+      gfx.lineTo(x + radius * 0.35, y);
+      gfx.strokePath();
+      gfx.beginPath();
+      gfx.moveTo(x, y - radius * 0.35);
+      gfx.lineTo(x, y + radius * 0.35);
+      gfx.strokePath();
     };
 
     drawReticle(width * 0.08, height * 0.12, 48, 0.18);
@@ -182,60 +279,55 @@ export class MenuScene extends Phaser.Scene {
     drawReticle(width * 0.92, height * 0.12, 48, 0.18);
     drawReticle(width * 0.92, height * 0.12, 32, 0.12);
 
-    // Ligne horizontale subtile en bas
-    g.lineStyle(1, HEX.brandPrimary, 0.08);
-    g.beginPath();
-    g.moveTo(width * 0.1, height * 0.88);
-    g.lineTo(width * 0.9, height * 0.88);
-    g.strokePath();
+    gfx.lineStyle(1, HEX.brandPrimary, 0.08);
+    gfx.beginPath();
+    gfx.moveTo(width * 0.1, height * 0.90);
+    gfx.lineTo(width * 0.9, height * 0.90);
+    gfx.strokePath();
   }
 
   private setupWebcam(width: number, height: number) {
     const videoEl = handTracker.getVideoEl();
     if (!videoEl) return;
-
     if (this.textures.exists("webcam-menu")) this.textures.remove("webcam-menu");
     const tex = this.textures.createCanvas("webcam-menu", width, height);
     if (!tex) return;
     this.webcamTex = tex;
-    this.add
-      .image(width / 2, height / 2, "webcam-menu")
-      .setDepth(DEPTH.webcam)
-      .setAlpha(0.35);
+    this.add.image(width / 2, height / 2, "webcam-menu").setDepth(DEPTH.webcam).setAlpha(0.30);
+  }
+
+  private onLandmarks = ({ hands }: LandmarksPayload): void => {
+    const { width: screenWidth, height: screenHeight } = this.scale;
+    this.handPositions = [null, null];
+    hands.forEach((hand, i) => {
+      if (!hand || hand.length === 0) return;
+      const lm = hand[PALM_LANDMARK];
+      this.handPositions[i] = { x: (1 - lm.x) * screenWidth, y: lm.y * screenHeight };
+    });
+  };
+
+  private attachHandTracking() {
+    handTracker.on("landmarks", this.onLandmarks);
+    this.events.once("shutdown", () => handTracker.off("landmarks", this.onLandmarks));
   }
 
   private setupHandTracking() {
-    const onLandmarks = ({ hands }: LandmarksPayload) => {
-      const { width: w, height: h } = this.scale;
-      this.handPositions = [null, null];
-      hands.forEach((hand, i) => {
-        if (!hand || hand.length === 0) return;
-        const lm = hand[PALM_LANDMARK];
-        this.handPositions[i] = { x: (1 - lm.x) * w, y: lm.y * h };
-      });
-    };
-
-    const attach = () => {
-      handTracker.on("landmarks", onLandmarks);
-      this.events.once("shutdown", () => handTracker.off("landmarks", onLandmarks));
-    };
-
     if (handTracker.isInitialized) {
-      attach();
-    } else {
-      (async () => {
-        try {
-          await handTracker.initCamera();
-          await handTracker.initDetector();
-          const { width, height } = this.scale;
-          this.setupWebcam(width, height);
-          handTracker.start();
-          attach();
-        } catch (err) {
-          console.warn("[MenuScene] caméra non disponible:", err);
-        }
-      })();
+      this.attachHandTracking();
+      return;
     }
+    void (async () => {
+      try {
+        await handTracker.initCamera();
+        await handTracker.initDetector();
+        const { width, height } = this.scale;
+        this.setupWebcam(width, height);
+        handTracker.start();
+        this.attachHandTracking();
+      } catch (err) {
+        console.warn("[MenuScene] caméra non disponible:", err);
+      }
+    })();
   }
 
   update(_time: number, delta: number) {
@@ -259,10 +351,10 @@ export class MenuScene extends Phaser.Scene {
     }
 
     this.cursors.update(this.handPositions);
-    this.btn.update(this.handPositions, delta);
+    this.allBtns.forEach((btn) => btn.update(this.handPositions, delta));
   }
 
   private doStart() {
-    this.scene.start("GameScene");
+    this.scene.start(GAMES[this.currentIndex].key);
   }
 }
