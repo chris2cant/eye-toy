@@ -6,7 +6,7 @@ import { HEX, COLOR, FONT, DEPTH, GAME_CIRCLE_PALETTE } from "../design-system/t
 
 const PALM_LANDMARK = 9;
 const CURSOR_COLORS = [HEX.brandPrimary, HEX.info];
-const GAME_DURATION = 10; // secondes
+const GAME_DURATION = 60; // secondes
 
 const HIT_TOLERANCE = 20;
 const MAX_CIRCLES = 5;
