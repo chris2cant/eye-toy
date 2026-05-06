@@ -36,6 +36,23 @@ export class WebcamLayer {
     this.tex.refresh();
   }
 
+  getLandmarkMapper(screenW: number, screenH: number): (lmX: number, lmY: number) => { x: number; y: number } {
+    const vw = this.videoEl?.videoWidth ?? 0;
+    const vh = this.videoEl?.videoHeight ?? 0;
+    if (!vw || !vh) {
+      return (lmX, lmY) => ({ x: (1 - lmX) * screenW, y: lmY * screenH });
+    }
+    const scale = Math.max(screenW / vw, screenH / vh);
+    const srcW = screenW / scale;
+    const srcH = screenH / scale;
+    const offsetX = (vw - srcW) / 2;
+    const offsetY = (vh - srcH) / 2;
+    return (lmX, lmY) => ({
+      x: (1 - (lmX * vw - offsetX) / srcW) * screenW,
+      y: ((lmY * vh - offsetY) / srcH) * screenH,
+    });
+  }
+
   private onResize = (gameSize: Phaser.Structs.Size): void => {
     if (!this.tex || !this.bg) return;
     this.tex.setSize(gameSize.width, gameSize.height);

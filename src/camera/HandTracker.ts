@@ -51,7 +51,7 @@ class HandTrackerClass extends Phaser.Events.EventEmitter {
     const vision = await FilesetResolver.forVisionTasks("/wasm");
     this.landmarker = await HandLandmarker.createFromOptions(vision, {
       baseOptions: { modelAssetPath: MODEL_URL },
-      numHands: 2,
+      numHands: 4,
       runningMode: "VIDEO",
     });
     console.log("[HandTracker] initialisé");
@@ -60,7 +60,7 @@ class HandTrackerClass extends Phaser.Events.EventEmitter {
   start(): void {
     if (this.running) return;
     this.running = true;
-    this.prevPinching = [false, false];
+    this.prevPinching = [false, false, false, false];
     this.tick();
   }
 
@@ -69,47 +69,40 @@ class HandTrackerClass extends Phaser.Events.EventEmitter {
     cancelAnimationFrame(this.rafId);
   }
 
-  private tick = (): void => {
-    if (!this.running || !this.videoEl || !this.landmarker) return;
+  private computePinch(hand: HandLandmark[], handIndex: number): PinchPoint | null {
+    const thumb = hand[THUMB_TIP];
+    const index = hand[INDEX_TIP];
+    const dx = thumb.x - index.x;
+    const dy = thumb.y - index.y;
+    if (Math.sqrt(dx * dx + dy * dy) >= PINCH_THRESHOLD) return null;
+    return { x: 1 - (thumb.x + index.x) / 2, y: (thumb.y + index.y) / 2, handIndex };
+  }
 
-    if (this.videoEl.readyState >= 2) {
-      const result: HandLandmarkerResult = this.landmarker.detectForVideo(
-        this.videoEl,
-        performance.now(),
-      );
+  private detectAndEmit(): void {
+    const result: HandLandmarkerResult = this.landmarker!.detectForVideo(
+      this.videoEl!,
+      performance.now(),
+    );
+    const pinches: PinchPoint[] = [];
 
-      const pinches: PinchPoint[] = [];
+    for (let i = 0; i < 4; i++) {
+      const hand = result.landmarks[i] as HandLandmark[] | undefined;
+      if (!hand) { this.prevPinching[i] = false; continue; }
 
-      for (let i = 0; i < 2; i++) {
-        const hand = result.landmarks[i];
-        if (!hand) {
-          this.prevPinching[i] = false;
-          continue;
-        }
-        const thumb = hand[THUMB_TIP];
-        const index = hand[INDEX_TIP];
-        const dx = thumb.x - index.x;
-        const dy = thumb.y - index.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const isPinching = dist < PINCH_THRESHOLD;
-
-        if (isPinching) {
-          const p: PinchPoint = {
-            x: 1 - (thumb.x + index.x) / 2,
-            y: (thumb.y + index.y) / 2,
-            handIndex: i,
-          };
-          pinches.push(p);
-          if (!this.prevPinching[i]) {
-            this.emit("pinch", p);
-          }
-        }
-        this.prevPinching[i] = isPinching;
+      const pinchPoint = this.computePinch(hand, i);
+      if (pinchPoint) {
+        pinches.push(pinchPoint);
+        if (!this.prevPinching[i]) this.emit("pinch", pinchPoint);
       }
-
-      this.emit("landmarks", { hands: result.landmarks, pinches });
+      this.prevPinching[i] = pinchPoint !== null;
     }
 
+    this.emit("landmarks", { hands: result.landmarks, pinches });
+  }
+
+  private tick = (): void => {
+    if (!this.running || !this.videoEl || !this.landmarker) return;
+    if (this.videoEl.readyState >= 2) this.detectAndEmit();
     this.rafId = requestAnimationFrame(this.tick);
   };
 }

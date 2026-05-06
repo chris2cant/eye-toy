@@ -1,14 +1,9 @@
 const ctx = new AudioContext();
 
-function playTone(
-  frequency: number,
-  endFrequency: number,
-  duration: number,
-  type: OscillatorType,
-  gainPeak: number,
-) {
-  // AudioContext peut être suspendu avant une interaction utilisateur
-  if (ctx.state === "suspended") ctx.resume();
+type ToneParams = { type: OscillatorType; gainPeak: number };
+
+function playTone(frequency: number, endFrequency: number, duration: number, { type, gainPeak }: ToneParams) {
+  if (ctx.state === "suspended") void ctx.resume();
 
   const osc = ctx.createOscillator();
   const gain = ctx.createGain();
@@ -27,32 +22,29 @@ function playTone(
   osc.stop(now + duration);
 }
 
-export const AudioFX = {
+export const audioFX = {
   pop() {
-    // Court "bloop" montant — récompense
-    playTone(440, 900, 0.1, "sine", 0.4);
+    playTone(440, 900, 0.1, { type: "sine", gainPeak: 0.4 });
   },
 
   expire() {
-    // Ton descendant discret — raté
-    playTone(300, 150, 0.2, "triangle", 0.2);
+    playTone(300, 150, 0.2, { type: "triangle", gainPeak: 0.2 });
   },
 
   gameOver() {
-    // Trois notes descendantes — fin de partie
     const now = ctx.currentTime;
-    if (ctx.state === "suspended") ctx.resume();
+    if (ctx.state === "suspended") void ctx.resume();
     [523, 392, 262].forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      const t = now + i * 0.18;
-      osc.frequency.setValueAtTime(freq, t);
-      gain.gain.setValueAtTime(0.35, t);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      const noteTime = now + i * 0.18;
+      osc.frequency.setValueAtTime(freq, noteTime);
+      gain.gain.setValueAtTime(0.35, noteTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, noteTime + 0.25);
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.start(t);
-      osc.stop(t + 0.25);
+      osc.start(noteTime);
+      osc.stop(noteTime + 0.25);
     });
   },
 };

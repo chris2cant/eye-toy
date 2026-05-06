@@ -73,6 +73,11 @@ export class SkeletonScene extends Phaser.Scene {
       .setAlpha(0.55)
       .setDepth(DEPTH.hud);
 
+    await this.initTrackers(width, height);
+    this.setupListeners();
+  }
+
+  private async initTrackers(width: number, height: number): Promise<void> {
     try {
       await bodyTracker.initDetector();
       bodyTracker.start();
@@ -88,19 +93,18 @@ export class SkeletonScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(DEPTH.hud);
     }
-
     if (!handTracker.isInitialized) await handTracker.initDetector();
     handTracker.start();
+  }
 
+  private setupListeners(): void {
     handTracker.on("landmarks", this.onHands, this);
     bodyTracker.on("body", this.onBody, this);
-
     this.events.once("shutdown", () => {
       handTracker.off("landmarks", this.onHands, this);
       bodyTracker.off("body", this.onBody, this);
       bodyTracker.stop();
     });
-
     this.input.keyboard!.on("keydown-Q", () => this.doQuit());
     this.input.keyboard!.on("keydown-ESCAPE", () => this.doQuit());
   }
@@ -140,29 +144,30 @@ export class SkeletonScene extends Phaser.Scene {
     this.drawSkeleton();
   }
 
-  private lmToScreen(lm: { x: number; y: number }, width: number, height: number) {
-    return { x: (1 - lm.x) * width, y: lm.y * height };
+  private isVisible(lm: PoseLandmark): boolean {
+    return (lm.visibility ?? 1) >= VIS_THRESHOLD;
   }
 
   private drawSkeleton() {
     const { width, height } = this.scale;
+    const map = this.webcam.getLandmarkMapper(width, height);
     this.gfx.clear();
-    this.drawPose(width, height);
+    this.drawPose(map);
     this.handLandmarks.forEach((hand, i) => {
-      if (hand.length > 0) this.drawHand(hand, i, width, height);
+      if (hand.length > 0) this.drawHand(hand, i, map);
     });
   }
 
-  private drawPose(width: number, height: number) {
+  private drawPose(map: (x: number, y: number) => { x: number; y: number }) {
     const lms = this.poseLandmarks;
     if (lms.length === 0) return;
 
     this.gfx.lineStyle(2.5, HEX.brandPrimary, 0.85);
-    for (const [a, b] of POSE_CONNECTIONS) {
-      if (!lms[a] || !lms[b]) continue;
-      if ((lms[a].visibility ?? 1) < VIS_THRESHOLD || (lms[b].visibility ?? 1) < VIS_THRESHOLD) continue;
-      const pa = this.lmToScreen(lms[a], width, height);
-      const pb = this.lmToScreen(lms[b], width, height);
+    for (const [idxA, idxB] of POSE_CONNECTIONS) {
+      if (!lms[idxA] || !lms[idxB]) continue;
+      if (!this.isVisible(lms[idxA]) || !this.isVisible(lms[idxB])) continue;
+      const pa = map(lms[idxA].x, lms[idxA].y);
+      const pb = map(lms[idxB].x, lms[idxB].y);
       this.gfx.beginPath();
       this.gfx.moveTo(pa.x, pa.y);
       this.gfx.lineTo(pb.x, pb.y);
@@ -171,19 +176,23 @@ export class SkeletonScene extends Phaser.Scene {
 
     this.gfx.fillStyle(HEX.brandPrimary, 0.9);
     for (const lm of lms) {
-      if ((lm.visibility ?? 1) < VIS_THRESHOLD) continue;
-      const p = this.lmToScreen(lm, width, height);
-      this.gfx.fillCircle(p.x, p.y, 4);
+      if (!this.isVisible(lm)) continue;
+      const pt = map(lm.x, lm.y);
+      this.gfx.fillCircle(pt.x, pt.y, 4);
     }
   }
 
-  private drawHand(hand: HandLandmark[], handIndex: number, width: number, height: number) {
+  private drawHand(
+    hand: HandLandmark[],
+    handIndex: number,
+    map: (x: number, y: number) => { x: number; y: number },
+  ) {
     const color = HAND_COLORS[handIndex];
     this.gfx.lineStyle(2.5, color, 0.9);
-    for (const [a, b] of HAND_CONNECTIONS) {
-      if (!hand[a] || !hand[b]) continue;
-      const pa = this.lmToScreen(hand[a], width, height);
-      const pb = this.lmToScreen(hand[b], width, height);
+    for (const [idxA, idxB] of HAND_CONNECTIONS) {
+      if (!hand[idxA] || !hand[idxB]) continue;
+      const pa = map(hand[idxA].x, hand[idxA].y);
+      const pb = map(hand[idxB].x, hand[idxB].y);
       this.gfx.beginPath();
       this.gfx.moveTo(pa.x, pa.y);
       this.gfx.lineTo(pb.x, pb.y);
@@ -191,8 +200,8 @@ export class SkeletonScene extends Phaser.Scene {
     }
     this.gfx.fillStyle(color, 1);
     for (const lm of hand) {
-      const p = this.lmToScreen(lm, width, height);
-      this.gfx.fillCircle(p.x, p.y, 3.5);
+      const pt = map(lm.x, lm.y);
+      this.gfx.fillCircle(pt.x, pt.y, 3.5);
     }
   }
 

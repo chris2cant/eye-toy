@@ -175,13 +175,11 @@ export class CirclePool {
 
 export function computeHandBounds(
   hand: { x: number; y: number }[],
-  width: number,
-  height: number,
+  mapper: (lmX: number, lmY: number) => { x: number; y: number },
 ): HandBounds {
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const lm of hand) {
-    const sx = (1 - lm.x) * width;
-    const sy = lm.y * height;
+    const { x: sx, y: sy } = mapper(lm.x, lm.y);
     if (sx < minX) minX = sx;
     if (sx > maxX) maxX = sx;
     if (sy < minY) minY = sy;

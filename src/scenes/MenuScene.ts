@@ -23,10 +23,22 @@ const GAMES: GameEntry[] = [
     tag: "ACTION",
   },
   {
+    key: "SableMagiqueScene",
+    name: "Sable Magique",
+    desc: "Bouge les mains et regarde le sable\nsuivre chacun de tes gestes.",
+    tag: "RELAXANT",
+  },
+  {
     key: "SkeletonScene",
     name: "Squelette",
     desc: "Visualisation filaire de ton corps\nen temps réel par MediaPipe.",
     tag: "DÉMO",
+  },
+  {
+    key: "JeuDeFicelleScene",
+    name: "Jeu de Ficelle",
+    desc: "Tends tes deux mains et crée\ndes cordes lumineuses entre tes doigts.",
+    tag: "LUMIÈRE",
   },
 ];
 

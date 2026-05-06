@@ -28,7 +28,9 @@ export default tseslint.config(
         { selector: "parameter", format: ["camelCase"], leadingUnderscore: "allow" },
         // PascalCase pour classes, interfaces, types, enums
         { selector: "typeLike", format: ["PascalCase"] },
-        // camelCase pour les méthodes
+        // UPPER_CASE autorisé pour les propriétés d'objets-constantes (as const)
+        { selector: "objectLiteralProperty", format: ["camelCase", "UPPER_CASE"] },
+        // camelCase pour les méthodes et membres de classe
         { selector: "memberLike", format: ["camelCase"], leadingUnderscore: "allow" },
       ],
 

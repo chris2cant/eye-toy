@@ -98,6 +98,25 @@ Always use Context7 before writing Phaser or MediaPipe code.
 | `PoseLandmarker`     | 33 body pts          | Full-body gestures                   |
 | `HolisticLandmarker` | All-in-one           | When all 3 are active simultaneously |
 
+## UX guidelines — règles strictes
+
+Ces règles s'appliquent à toutes les scènes de navigation (Menu, GameOver, et toute future scène hors gameplay).
+
+### Placement des éléments interactifs
+
+**Les boutons et zones cliquables doivent TOUJOURS être positionnés dans la moitié haute de l'écran (y ≤ height × 0.50).**
+
+Raison : pendant le gameplay, les mains de l'utilisateur sont naturellement dans la moitié basse de l'écran pour attraper les cibles. Si les boutons de navigation se trouvent en bas, ils risquent d'être activés par inadvertance à la fin d'une partie ou lors de transitions.
+
+Règle de placement recommandée :
+- Titre / branding : `y ≈ height × 0.10–0.18`
+- Bouton(s) d'action principal : `y ≈ height × 0.28–0.40`
+- Contenu informatif (score, règles, records) : `y ≈ height × 0.50–0.85`
+
+### Activation des boutons
+
+L'activation se fait par **wave/shake** (agitation de la main) et non par dwell statique. La main doit bouger dans la zone du bouton pour le charger. Rester immobile ne produit aucun effet.
+
 ## Critical notes
 
 - `getUserMedia` requires HTTPS or `localhost` — the Vite dev server must use HTTPS when exposed on the network.
