@@ -98,6 +98,18 @@ Always use Context7 before writing Phaser or MediaPipe code.
 | `PoseLandmarker`     | 33 body pts          | Full-body gestures                   |
 | `HolisticLandmarker` | All-in-one           | When all 3 are active simultaneously |
 
+## Performance guidelines — règles strictes
+
+Les jeux webcam + MediaPipe sont très sensibles au coût main thread. Avant d'ajouter une scène ou un effet, appliquer ces règles :
+
+- **Un seul modèle MediaPipe par scène si possible.** Ne pas lancer `HandLandmarker` + `PoseLandmarker` en parallèle sauf nécessité gameplay claire. Exemple validé : `SkeletonScene` utilise seulement `PoseLandmarker` et les points main/poignet de la pose pour le bouton retour.
+- **Limiter `numHands`.** Utiliser `numHands: 2` par défaut. Monter à `4` uniquement pour un gameplay qui l'exige explicitement, comme `JeuDeFicelleScene`.
+- **Cadencer les trackers.** Ne pas supposer que la détection doit tourner à 60 fps. Références actuelles : menu `20 fps`, jeux main classiques `24 fps`, squelette pose `15 fps`, ficelle 4 mains `20 fps`.
+- **Throttler la webcam.** `WebcamLayer.render(time, maxFps)` doit être utilisé dans les scènes de jeu. Références actuelles : menu `15 fps`, jeux main `20–24 fps`, ficelle `15 fps`.
+- **Throttler les canvas/Graphics coûteux.** Les overlays plein écran, arcs, ombres, scanlines et redraws de `Graphics` ne doivent pas être recalculés chaque frame si une cadence `20–30 fps` suffit visuellement.
+- **Éviter les redraws sans changement.** Les composants UI comme `DwellButton` doivent redessiner seulement quand l'état visuel change (zone active, progression, cooldown), pas à chaque `update()`.
+- **Mesurer avec `DebugScene`.** Après toute scène MediaPipe, tester avec `D` et viser au moins `30 fps` en usage normal. Si une scène tombe sous `25 fps`, réduire d'abord fréquence webcam/détection avant d'ajouter de nouveaux effets.
+
 ## UX guidelines — règles strictes
 
 Ces règles s'appliquent à toutes les scènes de navigation (Menu, GameOver, et toute future scène hors gameplay).
@@ -115,7 +127,40 @@ Règle de placement recommandée :
 
 ### Activation des boutons
 
-L'activation se fait par **wave/shake** (agitation de la main) et non par dwell statique. La main doit bouger dans la zone du bouton pour le charger. Rester immobile ne produit aucun effet.
+L'activation se fait par **dwell temporisé avec feedback visible**. La main doit rester dans la zone du bouton pendant environ 1 seconde pour le charger. Les petits tremblements naturels sont tolérés tant que la main ne sort pas franchement de la zone.
+
+### Bouton "Retour au menu" — standard obligatoire
+
+**Chaque scène de jeu DOIT avoir un bouton `DwellButton` pour retourner au menu.** Ce standard s'applique à toutes les scènes de gameplay existantes et futures.
+
+Implémentation de référence (à copier telle quelle) :
+
+```typescript
+// 1. Import
+import { DwellButton } from "../../design-system/DwellButton";
+
+// 2. Champ privé
+private btnBack!: DwellButton;
+private handPositions: ({ x: number; y: number } | null)[] = [null, null];
+
+// 3. Dans create()
+this.btnBack = new DwellButton(this, 100, height * 0.12, {
+  label: "← MENU",
+  fontSize: "20px",
+  onActivate: () => this.scene.start("MenuScene"),
+  depth: DEPTH.hud,
+  dwellMs: 1000,
+});
+
+// 4. Dans onLandmarks() — extraire la position de paume (landmark 9)
+const palm = hand[9];
+this.handPositions[i] = mapper(palm.x, palm.y);
+
+// 5. Dans update(_time: number, delta: number)
+this.btnBack.update(this.handPositions, delta);
+```
+
+Position : `x = 100, y = height * 0.12` (coin supérieur gauche, respecte la règle y ≤ height × 0.50).
 
 ## Critical notes
 

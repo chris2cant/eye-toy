@@ -1,4 +1,9 @@
-import { MOTION } from "./config";
+const MOTION = {
+  CANVAS_SCALE: 0.25,
+  SAMPLE_STEP: 2,
+  THRESHOLD: 18,
+  CLUSTER_RADIUS: 28,
+} as const;
 
 export interface MotionCluster {
   /** Screen-space X coordinate (pixels). */

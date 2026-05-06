@@ -4,6 +4,7 @@ export class WebcamLayer {
   private videoEl: HTMLVideoElement | null = null;
   private tex: Phaser.Textures.CanvasTexture | null = null;
   private bg: Phaser.GameObjects.Image | null = null;
+  private nextRenderAt = 0;
 
   constructor(private readonly scene: Phaser.Scene) {}
 
@@ -17,7 +18,11 @@ export class WebcamLayer {
     this.scene.scale.on("resize", this.onResize, this);
   }
 
-  render(): void {
+  render(time?: number, maxFps?: number): void {
+    if (time !== undefined && maxFps !== undefined) {
+      if (time < this.nextRenderAt) return;
+      this.nextRenderAt = time + 1000 / Math.max(1, maxFps);
+    }
     if (!this.tex || !this.videoEl || this.videoEl.readyState < 2) return;
     const ctx = this.tex.getContext();
     if (!ctx) return;

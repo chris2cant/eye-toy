@@ -2,7 +2,8 @@ import Phaser from "phaser";
 import { HEX, COLOR, FONT } from "./tokens";
 
 const CORNER = 10;
-const SHAKE_THRESHOLD = 4;
+const DEFAULT_COOLDOWN_MS = 500;
+const PROGRESS_EPSILON = 0.002;
 
 export type DwellButtonConfig = {
   label: string;
@@ -10,6 +11,7 @@ export type DwellButtonConfig = {
   dwellMs?: number;
   drainMs?: number;
   zonePad?: number;
+  cooldownMs?: number;
   depth?: number;
   fontSize?: string;
 };
@@ -22,11 +24,15 @@ export class DwellButton extends Phaser.GameObjects.Container {
   private _h = 0;
   private _progress = 0;
   private _activated = false;
-  private _prevPositions: ({ x: number; y: number } | null)[] = [null, null];
+  private _cooldownRemainingMs = 0;
+  private _lastBgActive: boolean | null = null;
+  private _lastRingProgress = -1;
+  private _lastScale = 1;
 
   private readonly _chargeMs: number;
   private readonly _drainMs: number;
   private readonly _zonePad: number;
+  private readonly _cooldownMs: number;
   private readonly _onActivate: () => void;
 
   constructor(
@@ -40,6 +46,7 @@ export class DwellButton extends Phaser.GameObjects.Container {
     this._chargeMs = config.dwellMs ?? 1200;
     this._drainMs = config.drainMs ?? 500;
     this._zonePad = config.zonePad ?? 60;
+    this._cooldownMs = config.cooldownMs ?? DEFAULT_COOLDOWN_MS;
 
     this._bg = scene.add.graphics();
     this._ring = scene.add.graphics();
@@ -72,6 +79,7 @@ export class DwellButton extends Phaser.GameObjects.Container {
   private _fire() {
     if (this._activated) return;
     this._activated = true;
+    this._cooldownRemainingMs = this._cooldownMs;
     this._onActivate();
   }
 
@@ -81,6 +89,7 @@ export class DwellButton extends Phaser.GameObjects.Container {
     const hh = this._h / 2;
 
     gfx.clear();
+    this._lastBgActive = active;
 
     gfx.fillStyle(active ? HEX.brandPrimaryMuted : HEX.bgElevated, active ? 0.9 : 0.92);
     gfx.fillRect(-hw, -hh, this._w, this._h);
@@ -117,6 +126,7 @@ export class DwellButton extends Phaser.GameObjects.Container {
   private _drawRing() {
     const gfx = this._ring;
     gfx.clear();
+    this._lastRingProgress = this._progress;
     if (this._progress <= 0) return;
 
     const ringRadius = Math.max(this._w, this._h) / 2 + 24;
@@ -139,12 +149,10 @@ export class DwellButton extends Phaser.GameObjects.Container {
     const hw = this._w / 2 + this._zonePad;
     const hh = this._h / 2 + this._zonePad;
 
-    let totalMotion = 0;
     let handInZone = false;
 
-    hands.forEach((hand, i) => {
+    hands.forEach((hand) => {
       if (hand === null) {
-        this._prevPositions[i] = null;
         return;
       }
 
@@ -152,20 +160,13 @@ export class DwellButton extends Phaser.GameObjects.Container {
 
       if (inZone) {
         handInZone = true;
-        const prev = this._prevPositions[i];
-        if (prev !== null) {
-          const dx = hand.x - prev.x;
-          const dy = hand.y - prev.y;
-          totalMotion += Math.sqrt(dx * dx + dy * dy);
-        }
       }
-
-      this._prevPositions[i] = hand;
     });
 
-    const isShaking = handInZone && totalMotion > SHAKE_THRESHOLD;
-
-    if (isShaking) {
+    if (this._cooldownRemainingMs > 0) {
+      this._cooldownRemainingMs = Math.max(0, this._cooldownRemainingMs - delta);
+      this._progress = 0;
+    } else if (handInZone) {
       this._progress = Math.min(1, this._progress + delta / this._chargeMs);
       if (this._progress >= 1) this._fire();
     } else {
@@ -173,16 +174,27 @@ export class DwellButton extends Phaser.GameObjects.Container {
     }
 
     const scale = 1 + this._progress * 0.4;
-    this.setScale(scale);
+    if (Math.abs(scale - this._lastScale) > PROGRESS_EPSILON) {
+      this._lastScale = scale;
+      this.setScale(scale);
+    }
 
-    this._drawBg(handInZone);
-    this._drawRing();
+    if (this._lastBgActive !== handInZone) {
+      this._drawBg(handInZone);
+    }
+    if (
+      Math.abs(this._progress - this._lastRingProgress) > PROGRESS_EPSILON ||
+      (this._progress === 0 && this._lastRingProgress !== 0)
+    ) {
+      this._drawRing();
+    }
   }
 
   reset() {
     this._progress = 0;
     this._activated = false;
-    this._prevPositions = [null, null];
+    this._cooldownRemainingMs = this._cooldownMs;
+    this._lastScale = 1;
     this.setScale(1);
     this._drawBg(false);
     this._drawRing();

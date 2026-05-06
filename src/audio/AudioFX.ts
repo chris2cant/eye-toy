@@ -34,17 +34,33 @@ export const audioFX = {
   gameOver() {
     const now = ctx.currentTime;
     if (ctx.state === "suspended") void ctx.resume();
-    [523, 392, 262].forEach((freq, i) => {
+
+    [523.25, 659.25, 783.99, 1046.5].forEach((freq, i) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      const noteTime = now + i * 0.18;
+      const noteTime = now + i * 0.14;
+      osc.type = i === 3 ? "triangle" : "sine";
       osc.frequency.setValueAtTime(freq, noteTime);
-      gain.gain.setValueAtTime(0.35, noteTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, noteTime + 0.25);
+      gain.gain.setValueAtTime(0.28, noteTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, noteTime + 0.32);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start(noteTime);
-      osc.stop(noteTime + 0.25);
+      osc.stop(noteTime + 0.32);
+    });
+
+    [261.63, 392, 523.25].forEach((freq) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const noteTime = now + 0.52;
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, noteTime);
+      gain.gain.setValueAtTime(0.11, noteTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, noteTime + 0.75);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(noteTime);
+      osc.stop(noteTime + 0.75);
     });
   },
 };

@@ -7,12 +7,18 @@ import { DwellButton } from "../design-system/DwellButton";
 import { HandCursors } from "../design-system/HandCursors";
 
 const PALM_LANDMARK = 9;
+const MENU_TRACKER_FPS = 20;
+const MENU_WEBCAM_FPS = 15;
+const MENU_WEBCAM_FRAME_MS = 1000 / MENU_WEBCAM_FPS;
 
 interface GameEntry {
   key: string;
   name: string;
   desc: string;
   tag: string;
+  icon: string;
+  accent: number;
+  accentColor: string;
 }
 
 const GAMES: GameEntry[] = [
@@ -21,26 +27,52 @@ const GAMES: GameEntry[] = [
     name: "Attrape les tous",
     desc: "Attrape les ronds avec tes mains\navant qu'ils disparaissent !",
     tag: "ACTION",
+    icon: "HAND",
+    accent: HEX.brandPrimary,
+    accentColor: COLOR.brandPrimary,
   },
   {
     key: "SableMagiqueScene",
     name: "Sable Magique",
     desc: "Bouge les mains et regarde le sable\nsuivre chacun de tes gestes.",
     tag: "RELAXANT",
+    icon: "FLOW",
+    accent: HEX.success,
+    accentColor: COLOR.success,
   },
   {
     key: "SkeletonScene",
     name: "Squelette",
     desc: "Visualisation filaire de ton corps\nen temps réel par MediaPipe.",
     tag: "DÉMO",
+    icon: "BODY",
+    accent: HEX.info,
+    accentColor: COLOR.info,
   },
   {
     key: "JeuDeFicelleScene",
     name: "Jeu de Ficelle",
     desc: "Tends tes deux mains et crée\ndes cordes lumineuses entre tes doigts.",
     tag: "LUMIÈRE",
+    icon: "LINK",
+    accent: HEX.warning,
+    accentColor: COLOR.warning,
   },
 ];
+
+type CarouselCard = {
+  container: Phaser.GameObjects.Container;
+  frame: Phaser.GameObjects.Graphics;
+  tag: Phaser.GameObjects.Text;
+  icon: Phaser.GameObjects.Text;
+  title: Phaser.GameObjects.Text;
+  desc: Phaser.GameObjects.Text;
+  activeBadge: Phaser.GameObjects.Text;
+};
+
+type MenuSceneData = {
+  selectedGameKey?: string;
+};
 
 export class MenuScene extends Phaser.Scene {
   private webcamTex: Phaser.Textures.CanvasTexture | null = null;
@@ -51,21 +83,19 @@ export class MenuScene extends Phaser.Scene {
   private allBtns: DwellButton[] = [];
   private handPositions: ({ x: number; y: number } | null)[] = [null, null];
   private currentIndex = 0;
+  private nextWebcamRenderAt = 0;
 
-  private cardGfx!: Phaser.GameObjects.Graphics;
-  private cardTag!: Phaser.GameObjects.Text;
-  private cardTitle!: Phaser.GameObjects.Text;
-  private cardDesc!: Phaser.GameObjects.Text;
+  private carouselCards: CarouselCard[] = [];
   private dots: Phaser.GameObjects.Text[] = [];
 
   constructor() {
     super({ key: "MenuScene" });
   }
 
-  create() {
+  create(data?: MenuSceneData) {
     const { width, height } = this.scale;
     const cx = width / 2;
-    this.currentIndex = 0;
+    this.currentIndex = this.getInitialGameIndex(data?.selectedGameKey);
     this.handPositions = [null, null];
 
     this.setupWebcam(width, height);
@@ -84,7 +114,7 @@ export class MenuScene extends Phaser.Scene {
       .setDepth(DEPTH.hud);
 
     this.buildButtons(width, height, cx);
-    this.buildCard(width, height, cx);
+    this.buildCarousel(width, height);
     this.buildDots(width, height, cx);
 
     const best = parseInt(localStorage.getItem("eyetoy_best") ?? "0", 10);
@@ -124,7 +154,7 @@ export class MenuScene extends Phaser.Scene {
     this.allBtns = [this.btnPrev, this.btnSelect, this.btnNext];
 
     this.add
-      .text(cx, height * 0.30 + 52, "✋  Agite la main sur le bouton", {
+      .text(cx, height * 0.30 + 52, "✋  Garde la main sur le bouton", {
         fontSize: "15px",
         fontFamily: FONT.ui,
         color: COLOR.textMuted,
@@ -133,52 +163,58 @@ export class MenuScene extends Phaser.Scene {
       .setDepth(DEPTH.hud);
   }
 
-  private buildCard(width: number, height: number, cx: number) {
-    const cardW = Math.min(480, width * 0.55);
-    const cardH = 160;
-    const cardCy = height * 0.55;
+  private buildCarousel(_width: number, height: number) {
+    this.carouselCards = GAMES.map((game) => {
+      const container = this.add.container(0, height * 0.56).setDepth(DEPTH.hud);
+      const frame = this.add.graphics();
+      const tag = this.add
+        .text(0, -74, game.tag, {
+          fontSize: "12px",
+          fontFamily: FONT.ui,
+          color: game.accentColor,
+          letterSpacing: 3,
+        })
+        .setOrigin(0.5);
+      const icon = this.add
+        .text(0, -32, game.icon, {
+          fontSize: "26px",
+          fontFamily: FONT.identity,
+          fontStyle: "800",
+          color: game.accentColor,
+        })
+        .setOrigin(0.5);
+      const title = this.add
+        .text(0, 16, game.name.toUpperCase(), {
+          fontSize: "22px",
+          fontFamily: FONT.identity,
+          fontStyle: "700",
+          color: COLOR.textPrimary,
+          align: "center",
+        })
+        .setOrigin(0.5);
+      const desc = this.add
+        .text(0, 62, game.desc, {
+          fontSize: "13px",
+          fontFamily: FONT.ui,
+          color: COLOR.textSecondary,
+          align: "center",
+          lineSpacing: 3,
+        })
+        .setOrigin(0.5);
+      const activeBadge = this.add
+        .text(0, 0, "ACTIF", {
+          fontSize: "11px",
+          fontFamily: FONT.ui,
+          fontStyle: "700",
+          color: COLOR.bgCanvas,
+        })
+        .setOrigin(0.5)
+        .setVisible(false);
 
-    this.cardGfx = this.add.graphics().setDepth(DEPTH.hud - 1);
-
-    this.cardTag = this.add
-      .text(cx, cardCy - 54, "", {
-        fontSize: "10px",
-        fontFamily: FONT.ui,
-        color: COLOR.brandPrimary,
-        letterSpacing: 3,
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH.hud);
-
-    this.cardTitle = this.add
-      .text(cx, cardCy - 18, "", {
-        fontSize: "36px",
-        fontFamily: FONT.identity,
-        fontStyle: "700",
-        color: COLOR.textPrimary,
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH.hud);
-
-    this.cardDesc = this.add
-      .text(cx, cardCy + 36, "", {
-        fontSize: "15px",
-        fontFamily: FONT.ui,
-        color: COLOR.textSecondary,
-        align: "center",
-        lineSpacing: 4,
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH.hud);
-
-    this._cardW = cardW;
-    this._cardH = cardH;
-    this._cardCy = cardCy;
+      container.add([frame, tag, icon, title, desc, activeBadge]);
+      return { container, frame, tag, icon, title, desc, activeBadge };
+    });
   }
-
-  private _cardW = 480;
-  private _cardH = 160;
-  private _cardCy = 0;
 
   private buildDots(width: number, height: number, cx: number) {
     this.dots = [];
@@ -198,34 +234,52 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private updateCard() {
-    const game = GAMES[this.currentIndex];
-    const { width } = this.scale;
+    const { width, height } = this.scale;
     const cx = width / 2;
+    const cy = height * 0.56;
+    const activeW = Math.min(400, Math.max(300, width * 0.26));
+    const sideW = Math.min(280, Math.max(190, width * 0.18));
+    const activeH = 230;
+    const sideH = 174;
+    const sideOffsetX = Math.min(340, Math.max(250, width * 0.22));
+    const backY = cy + 42;
 
-    this.cardGfx.clear();
-    this.cardGfx.fillStyle(HEX.bgElevated, 0.92);
-    this.cardGfx.fillRect(cx - this._cardW / 2, this._cardCy - this._cardH / 2, this._cardW, this._cardH);
-    this.cardGfx.lineStyle(1.5, HEX.brandPrimary, 0.5);
-    this.cardGfx.strokeRect(cx - this._cardW / 2, this._cardCy - this._cardH / 2, this._cardW, this._cardH);
+    this.carouselCards.forEach((card, i) => {
+      let offset = i - this.currentIndex;
+      if (offset > GAMES.length / 2) offset -= GAMES.length;
+      if (offset < -GAMES.length / 2) offset += GAMES.length;
 
-    // Corner accents
-    const cw = this._cardW / 2;
-    const ch = this._cardH / 2;
-    const accent = 12;
-    this.cardGfx.lineStyle(2.5, HEX.brandPrimary, 1);
-    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
-      const ox = cx + sx * cw;
-      const oy = this._cardCy + sy * ch;
-      this.cardGfx.beginPath();
-      this.cardGfx.moveTo(ox, oy + sy * accent);
-      this.cardGfx.lineTo(ox, oy);
-      this.cardGfx.lineTo(ox - sx * accent, oy);
-      this.cardGfx.strokePath();
-    }
+      const active = offset === 0;
+      const visible = Math.abs(offset) <= 1;
+      const game = GAMES[i];
+      const w = active ? activeW : sideW;
+      const h = active ? activeH : sideH;
+      const x = active ? cx : cx + offset * sideOffsetX;
+      const y = active ? cy : backY;
+      const alpha = active ? 1 : 0.64;
+      const scale = active ? 1 : 0.82;
 
-    this.cardTag.setText(game.tag);
-    this.cardTitle.setText(game.name);
-    this.cardDesc.setText(game.desc);
+      this.tweens.killTweensOf(card.container);
+      card.container.setVisible(visible).setDepth(DEPTH.hud + (active ? 5 : 1));
+      this.tweens.add({
+        targets: card.container,
+        x,
+        y,
+        scale,
+        alpha: visible ? alpha : 0,
+        angle: 0,
+        duration: 420,
+        ease: "Cubic.easeOut",
+      });
+      card.tag.setColor(game.accentColor);
+      card.icon.setColor(game.accentColor);
+      card.title.setFontSize(active ? "24px" : "18px");
+      card.desc.setFontSize(active ? "14px" : "11px");
+      card.desc.setVisible(active);
+      card.activeBadge.setPosition(activeW / 2 - 49, -80).setVisible(active);
+
+      this.drawGameCard(card.frame, w, h, game.accent, active, visible ? alpha : 0);
+    });
 
     this.dots.forEach((dot, i) => {
       dot.setColor(i === this.currentIndex ? COLOR.brandPrimary : COLOR.textMuted);
@@ -233,9 +287,68 @@ export class MenuScene extends Phaser.Scene {
     });
   }
 
+  private drawGameCard(
+    gfx: Phaser.GameObjects.Graphics,
+    w: number,
+    h: number,
+    accentColor: number,
+    active: boolean,
+    alpha: number,
+  ) {
+    const hw = w / 2;
+    const hh = h / 2;
+    const corner = active ? 18 : 10;
+
+    gfx.clear();
+    gfx.fillStyle(HEX.bgElevated, active ? 0.86 : 0.68);
+    gfx.fillRect(-hw, -hh, w, h);
+    gfx.lineStyle(active ? 2 : 1.5, accentColor, active ? 1 : 0.75 * alpha);
+    gfx.strokeRect(-hw, -hh, w, h);
+
+    gfx.lineStyle(active ? 4 : 2, accentColor, active ? 1 : 0.75 * alpha);
+    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      const ox = sx * hw;
+      const oy = sy * hh;
+      gfx.beginPath();
+      gfx.moveTo(ox, oy + sy * corner);
+      gfx.lineTo(ox, oy);
+      gfx.lineTo(ox - sx * corner, oy);
+      gfx.strokePath();
+    }
+
+    gfx.lineStyle(1, accentColor, active ? 0.35 : 0.18);
+    gfx.beginPath();
+    gfx.arc(0, -32, active ? 48 : 38, 0, Math.PI * 2);
+    gfx.strokePath();
+    gfx.beginPath();
+    gfx.arc(0, -32, active ? 30 : 24, 0, Math.PI * 2);
+    gfx.strokePath();
+
+    if (!active) return;
+
+    gfx.lineStyle(1, accentColor, 0.5);
+    gfx.beginPath();
+    gfx.moveTo(-hw + 28, 0);
+    gfx.lineTo(-62, 0);
+    gfx.moveTo(62, 0);
+    gfx.lineTo(hw - 28, 0);
+    gfx.strokePath();
+
+    gfx.fillStyle(accentColor, 0.22);
+    gfx.fillRect(hw - 76, -hh + 18, 54, 24);
+    gfx.lineStyle(1, accentColor, 0.9);
+    gfx.strokeRect(hw - 76, -hh + 18, 54, 24);
+  }
+
   private navigate(dir: number) {
     this.currentIndex = (this.currentIndex + dir + GAMES.length) % GAMES.length;
     this.updateCard();
+  }
+
+  private getInitialGameIndex(selectedGameKey?: string): number {
+    if (!selectedGameKey) return 0;
+    const index = GAMES.findIndex((game) => game.key === selectedGameKey);
+    return index >= 0 ? index : 0;
   }
 
   private addScorePill(cx: number, y: number, best: number) {
@@ -324,17 +437,13 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private setupHandTracking() {
-    if (handTracker.isInitialized) {
-      this.attachHandTracking();
-      return;
-    }
     void (async () => {
       try {
         await handTracker.initCamera();
-        await handTracker.initDetector();
+        await handTracker.initDetector({ numHands: 2 });
         const { width, height } = this.scale;
-        this.setupWebcam(width, height);
-        handTracker.start();
+        if (!this.webcamTex) this.setupWebcam(width, height);
+        handTracker.start({ targetFps: MENU_TRACKER_FPS });
         this.attachHandTracking();
       } catch (err) {
         console.warn("[MenuScene] caméra non disponible:", err);
@@ -342,9 +451,9 @@ export class MenuScene extends Phaser.Scene {
     })();
   }
 
-  update(_time: number, delta: number) {
+  update(time: number, delta: number) {
     const videoEl = handTracker.getVideoEl();
-    if (this.webcamTex && videoEl && videoEl.readyState >= 2) {
+    if (this.webcamTex && videoEl && videoEl.readyState >= 2 && time >= this.nextWebcamRenderAt) {
       const { width, height } = this.scale;
       const ctx = this.webcamTex.getContext();
       const vw = videoEl.videoWidth;
@@ -360,6 +469,7 @@ export class MenuScene extends Phaser.Scene {
         ctx.restore();
         this.webcamTex.refresh();
       }
+      this.nextWebcamRenderAt = time + MENU_WEBCAM_FRAME_MS;
     }
 
     this.cursors.update(this.handPositions);

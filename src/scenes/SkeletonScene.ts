@@ -1,19 +1,10 @@
 import Phaser from "phaser";
 import { handTracker } from "../camera/HandTracker";
-import type { LandmarksPayload, HandLandmark } from "../camera/HandTracker";
 import { bodyTracker } from "../camera/BodyTracker";
 import type { BodyPayload, PoseLandmark } from "../camera/BodyTracker";
 import { WebcamLayer } from "./WebcamLayer";
 import { COLOR, HEX, DEPTH, FONT } from "../design-system/tokens";
-
-const HAND_CONNECTIONS: [number, number][] = [
-  [0, 1], [0, 5], [0, 17], [5, 9], [9, 13], [13, 17],
-  [1, 2], [2, 3], [3, 4],
-  [5, 6], [6, 7], [7, 8],
-  [9, 10], [10, 11], [11, 12],
-  [13, 14], [14, 15], [15, 16],
-  [17, 18], [18, 19], [19, 20],
-];
+import { DwellButton } from "../design-system/DwellButton";
 
 const POSE_CONNECTIONS: [number, number][] = [
   [0, 1], [1, 2], [2, 3], [3, 7],
@@ -26,14 +17,22 @@ const POSE_CONNECTIONS: [number, number][] = [
   [24, 26], [26, 28], [28, 30], [30, 32], [28, 32],
 ];
 
-const HAND_COLORS: number[] = [HEX.warning, HEX.info];
 const VIS_THRESHOLD = 0.4;
+const LEFT_HAND_PROXY = 19;
+const RIGHT_HAND_PROXY = 20;
+const LEFT_WRIST = 15;
+const RIGHT_WRIST = 16;
+const TRACKER_TARGET_FPS = 15;
+const SKELETON_RENDER_FPS = 30;
+const SKELETON_RENDER_FRAME_MS = 1000 / SKELETON_RENDER_FPS;
 
 export class SkeletonScene extends Phaser.Scene {
   private webcam!: WebcamLayer;
   private gfx!: Phaser.GameObjects.Graphics;
-  private handLandmarks: HandLandmark[][] = [[], []];
   private poseLandmarks: PoseLandmark[] = [];
+  private btnBack!: DwellButton;
+  private handPositions: ({ x: number; y: number } | null)[] = [null, null];
+  private nextVisualRenderAt = 0;
 
   constructor() {
     super({ key: "SkeletonScene" });
@@ -48,9 +47,6 @@ export class SkeletonScene extends Phaser.Scene {
 
     this.add.rectangle(width / 2, height / 2, width, height, HEX.bgCanvas, 0.35).setDepth(DEPTH.bg);
 
-    const videoEl = await handTracker.initCamera();
-    this.webcam.setup(videoEl, width, height);
-
     this.add
       .text(width / 2, 16, "SQUELETTE", {
         fontSize: "13px",
@@ -62,6 +58,17 @@ export class SkeletonScene extends Phaser.Scene {
       .setDepth(DEPTH.hud);
 
     this.buildLegend(width, height);
+
+    this.btnBack = new DwellButton(this, 100, height * 0.12, {
+      label: "← MENU",
+      fontSize: "20px",
+      onActivate: () => this.doQuit(),
+      depth: DEPTH.hud,
+      dwellMs: 1000,
+    });
+
+    const videoEl = await handTracker.initCamera();
+    this.webcam.setup(videoEl, width, height);
 
     this.add
       .text(width / 2, height - 16, "[Q]  Retour au menu", {
@@ -80,7 +87,7 @@ export class SkeletonScene extends Phaser.Scene {
   private async initTrackers(width: number, height: number): Promise<void> {
     try {
       await bodyTracker.initDetector();
-      bodyTracker.start();
+      bodyTracker.start({ targetFps: TRACKER_TARGET_FPS });
     } catch (err) {
       console.error("[SkeletonScene] PoseLandmarker non disponible:", err);
       this.add
@@ -93,15 +100,12 @@ export class SkeletonScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(DEPTH.hud);
     }
-    if (!handTracker.isInitialized) await handTracker.initDetector();
-    handTracker.start();
+    handTracker.stop();
   }
 
   private setupListeners(): void {
-    handTracker.on("landmarks", this.onHands, this);
     bodyTracker.on("body", this.onBody, this);
     this.events.once("shutdown", () => {
-      handTracker.off("landmarks", this.onHands, this);
       bodyTracker.off("body", this.onBody, this);
       bodyTracker.stop();
     });
@@ -112,8 +116,7 @@ export class SkeletonScene extends Phaser.Scene {
   private buildLegend(width: number, height: number) {
     const items = [
       { color: COLOR.brandPrimary, label: "Corps / tête" },
-      { color: COLOR.warning, label: "Main gauche" },
-      { color: COLOR.info, label: "Main droite" },
+      { color: COLOR.warning, label: "Mains via pose" },
     ];
     const x = 16;
     let y = height - 16;
@@ -131,17 +134,18 @@ export class SkeletonScene extends Phaser.Scene {
     }
   }
 
-  private onHands = ({ hands }: LandmarksPayload): void => {
-    this.handLandmarks = [hands[0] ?? [], hands[1] ?? []];
-  };
-
   private onBody = ({ pose }: BodyPayload): void => {
     this.poseLandmarks = pose;
+    this.updateHandPositionsFromPose();
   };
 
-  update() {
-    this.webcam.render();
-    this.drawSkeleton();
+  update(time: number, delta: number) {
+    if (time >= this.nextVisualRenderAt) {
+      this.webcam.render();
+      this.drawSkeleton();
+      this.nextVisualRenderAt = time + SKELETON_RENDER_FRAME_MS;
+    }
+    this.btnBack?.update(this.handPositions, delta);
   }
 
   private isVisible(lm: PoseLandmark): boolean {
@@ -153,9 +157,7 @@ export class SkeletonScene extends Phaser.Scene {
     const map = this.webcam.getLandmarkMapper(width, height);
     this.gfx.clear();
     this.drawPose(map);
-    this.handLandmarks.forEach((hand, i) => {
-      if (hand.length > 0) this.drawHand(hand, i, map);
-    });
+    this.drawHandProxies(map);
   }
 
   private drawPose(map: (x: number, y: number) => { x: number; y: number }) {
@@ -182,30 +184,36 @@ export class SkeletonScene extends Phaser.Scene {
     }
   }
 
-  private drawHand(
-    hand: HandLandmark[],
-    handIndex: number,
-    map: (x: number, y: number) => { x: number; y: number },
-  ) {
-    const color = HAND_COLORS[handIndex];
-    this.gfx.lineStyle(2.5, color, 0.9);
-    for (const [idxA, idxB] of HAND_CONNECTIONS) {
-      if (!hand[idxA] || !hand[idxB]) continue;
-      const pa = map(hand[idxA].x, hand[idxA].y);
-      const pb = map(hand[idxB].x, hand[idxB].y);
-      this.gfx.beginPath();
-      this.gfx.moveTo(pa.x, pa.y);
-      this.gfx.lineTo(pb.x, pb.y);
-      this.gfx.strokePath();
-    }
-    this.gfx.fillStyle(color, 1);
-    for (const lm of hand) {
+  private updateHandPositionsFromPose(): void {
+    const { width, height } = this.scale;
+    const map = this.webcam.getLandmarkMapper(width, height);
+    const left = this.getVisiblePosePoint(LEFT_HAND_PROXY) ?? this.getVisiblePosePoint(LEFT_WRIST);
+    const right = this.getVisiblePosePoint(RIGHT_HAND_PROXY) ?? this.getVisiblePosePoint(RIGHT_WRIST);
+    this.handPositions = [
+      left ? map(left.x, left.y) : null,
+      right ? map(right.x, right.y) : null,
+    ];
+  }
+
+  private getVisiblePosePoint(index: number): PoseLandmark | null {
+    const lm = this.poseLandmarks[index];
+    if (!lm || !this.isVisible(lm)) return null;
+    return lm;
+  }
+
+  private drawHandProxies(map: (x: number, y: number) => { x: number; y: number }): void {
+    this.gfx.fillStyle(HEX.warning, 0.95);
+    for (const lm of [
+      this.getVisiblePosePoint(LEFT_HAND_PROXY) ?? this.getVisiblePosePoint(LEFT_WRIST),
+      this.getVisiblePosePoint(RIGHT_HAND_PROXY) ?? this.getVisiblePosePoint(RIGHT_WRIST),
+    ]) {
+      if (!lm) continue;
       const pt = map(lm.x, lm.y);
-      this.gfx.fillCircle(pt.x, pt.y, 3.5);
+      this.gfx.fillCircle(pt.x, pt.y, 7);
     }
   }
 
   private doQuit() {
-    this.scene.start("MenuScene");
+    this.scene.start("MenuScene", { selectedGameKey: this.sys.settings.key });
   }
 }

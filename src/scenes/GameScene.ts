@@ -1,13 +1,20 @@
 import Phaser from "phaser";
+import { audioFX } from "../audio/AudioFX";
 import { handTracker } from "../camera/HandTracker";
 import type { LandmarksPayload } from "../camera/HandTracker";
 import { COLOR, FONT, DEPTH, HEX } from "../design-system/tokens";
+import { DwellButton } from "../design-system/DwellButton";
 import { CirclePool, computeHandBounds } from "./CirclePool";
 import type { HandBounds, CircleConfig } from "./CirclePool";
 import { WebcamLayer } from "./WebcamLayer";
 
 const PALM_LANDMARK = 9;
 const GAME_DURATION = 60;
+const GAME_TRACKER_FPS = 24;
+const GAME_WEBCAM_FPS = 24;
+const TIMER_ARC_FPS = 30;
+const TIMER_ARC_FRAME_MS = 1000 / TIMER_ARC_FPS;
+const BACKGROUND_MUSIC_KEY = "music-background-funny-cartoon";
 
 interface DifficultyTier {
   threshold: number;
@@ -34,6 +41,12 @@ export class GameScene extends Phaser.Scene {
   private gameActive = false;
   private currentTierIndex = 0;
   private spawnTimer!: Phaser.Time.TimerEvent;
+  private gameStartTimestamp = 0;
+  private lastTickSecond = GAME_DURATION;
+  private btnBack!: DwellButton;
+  private handPositions: ({ x: number; y: number } | null)[] = [null, null];
+  private nextTimerArcRenderAt = 0;
+  private backgroundMusic: Phaser.Sound.BaseSound | null = null;
 
   constructor() { super({ key: "GameScene" }); }
 
@@ -41,18 +54,28 @@ export class GameScene extends Phaser.Scene {
     const { width, height } = this.scale;
     this.pool = new CirclePool(this);
     this.webcam = new WebcamLayer(this);
-    this.debugGraphics = this.add.graphics().setDepth(DEPTH.topUi);
-    this.input.keyboard!.on("keydown-D", () => {
-      this.debugMode = !this.debugMode;
-      if (!this.debugMode) this.debugGraphics.clear();
+    this.btnBack = new DwellButton(this, 100, height * 0.12, {
+      label: "← MENU",
+      fontSize: "20px",
+      onActivate: () => this.scene.start("MenuScene", { selectedGameKey: this.sys.settings.key }),
+      depth: DEPTH.hud,
+      dwellMs: 1000,
     });
+    this.debugGraphics = this.add.graphics().setDepth(DEPTH.topUi);
+    const onDebug = (active: boolean) => {
+      this.debugMode = active;
+      if (!active) this.debugGraphics.clear();
+    };
+    this.game.events.on("debug:toggle", onDebug);
+    this.events.once("shutdown", () => this.game.events.off("debug:toggle", onDebug));
+    this.events.once("shutdown", () => this.stopBackgroundMusic());
     try {
       const videoEl = await handTracker.initCamera();
       this.webcam.setup(videoEl, width, height);
-      await handTracker.initDetector();
+      await handTracker.initDetector({ numHands: 2 });
       handTracker.on("landmarks", this.onLandmarks, this);
       this.events.once("shutdown", () => handTracker.off("landmarks", this.onLandmarks, this));
-      handTracker.start();
+      handTracker.start({ targetFps: GAME_TRACKER_FPS });
       this.runCountdown();
     } catch (err) {
       console.error("[GameScene] erreur d'initialisation:", err);
@@ -100,21 +123,21 @@ export class GameScene extends Phaser.Scene {
   private startGame() {
     this.currentTierIndex = 0;
     this.timeLeft = GAME_DURATION;
+    this.lastTickSecond = GAME_DURATION;
     this.score = 0;
+    this.gameStartTimestamp = performance.now();
     this.scene.launch("UIScene");
     this.game.events.emit("score:update", 0);
     this.game.events.emit("timer:update", GAME_DURATION);
+    this.startBackgroundMusic();
     this.spawnTimer = this.time.addEvent({
       delay: this.tier.spawnDelay, loop: true, callback: this.spawnCircle, callbackScope: this,
     });
     this.gameActive = true;
-    this.time.addEvent({
-      delay: 1000, repeat: GAME_DURATION - 1, callback: this.onTick, callbackScope: this,
-    });
   }
 
-  private onTick = (): void => {
-    this.timeLeft -= 1;
+  private onTick(newTimeLeft: number): void {
+    this.timeLeft = newTimeLeft;
     this.game.events.emit("timer:update", this.timeLeft);
     const elapsed = (GAME_DURATION - this.timeLeft) / GAME_DURATION;
     const newTierIndex = TIERS.reduce((best, tier, i) => elapsed >= tier.threshold ? i : best, 0);
@@ -123,13 +146,31 @@ export class GameScene extends Phaser.Scene {
       this.spawnTimer.reset({ delay: this.tier.spawnDelay, loop: true, callback: this.spawnCircle, callbackScope: this });
     }
     if (this.timeLeft <= 0) this.endGame();
-  };
+  }
 
   private endGame() {
     this.gameActive = false;
+    this.stopBackgroundMusic();
     this.pool.clearAll();
     this.scene.stop("UIScene");
+    audioFX.gameOver();
     this.scene.launch("GameOverScene", { score: this.score });
+  }
+
+  private startBackgroundMusic(): void {
+    if (this.backgroundMusic?.isPlaying) return;
+    this.backgroundMusic = this.sound.add(BACKGROUND_MUSIC_KEY, {
+      loop: true,
+      volume: 0.35,
+    });
+    this.backgroundMusic.play();
+  }
+
+  private stopBackgroundMusic(): void {
+    if (!this.backgroundMusic) return;
+    this.backgroundMusic.stop();
+    this.backgroundMusic.destroy();
+    this.backgroundMusic = null;
   }
 
   private spawnCircle = (): void => {
@@ -152,25 +193,40 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onLandmarks = ({ hands }: LandmarksPayload): void => {
-    if (!this.gameActive) {
-      this.handBounds = [null, null];
-      return;
-    }
     const { width, height } = this.scale;
     const mapper = this.webcam.getLandmarkMapper(width, height);
     this.handBounds = [null, null];
+
     hands.forEach((hand, i) => {
-      if (!hand || hand.length === 0) return;
+      if (!hand || hand.length === 0) {
+        this.handPositions[i] = null;
+        return;
+      }
+      const palm = hand[PALM_LANDMARK];
+      this.handPositions[i] = mapper(palm.x, palm.y);
+      if (!this.gameActive) return;
       const bounds = computeHandBounds(hand, mapper);
       this.handBounds[i] = bounds;
       this.pool.checkAndProcess(bounds, (delta) => this.updateScore(delta));
     });
   };
 
-  update() {
-    this.webcam.render();
+  update(time: number, delta: number) {
+    this.webcam.render(time, GAME_WEBCAM_FPS);
     this.renderDebugBounds();
-    this.pool.renderTimerArcs(this.time.now);
+    if (time >= this.nextTimerArcRenderAt) {
+      this.pool.renderTimerArcs(this.time.now);
+      this.nextTimerArcRenderAt = time + TIMER_ARC_FRAME_MS;
+    }
+    this.btnBack.update(this.handPositions, delta);
+    if (this.gameActive) {
+      const elapsed = (performance.now() - this.gameStartTimestamp) / 1000;
+      const newTimeLeft = Math.max(0, GAME_DURATION - Math.floor(elapsed));
+      if (newTimeLeft !== this.lastTickSecond) {
+        this.lastTickSecond = newTimeLeft;
+        this.onTick(newTimeLeft);
+      }
+    }
   }
 
   private renderDebugBounds() {

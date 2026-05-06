@@ -5,6 +5,9 @@ import Phaser from "phaser";
 export type HandLandmark = { x: number; y: number; z: number };
 export type PinchPoint = { x: number; y: number; handIndex: number };
 export type LandmarksPayload = { hands: HandLandmark[][]; pinches: PinchPoint[] };
+export type CameraOptions = { width?: number; height?: number; frameRate?: number };
+export type HandDetectorOptions = { numHands?: number };
+export type TrackerRuntimeOptions = { targetFps?: number; phaseMs?: number };
 
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
@@ -12,6 +15,9 @@ const MODEL_URL =
 const THUMB_TIP = 4;
 const INDEX_TIP = 8;
 const PINCH_THRESHOLD = 0.08;
+const DEFAULT_CAMERA: Required<CameraOptions> = { width: 640, height: 480, frameRate: 30 };
+const DEFAULT_NUM_HANDS = 2;
+const DEFAULT_TARGET_FPS = 30;
 
 class HandTrackerClass extends Phaser.Events.EventEmitter {
   private landmarker: HandLandmarker | null = null;
@@ -20,6 +26,9 @@ class HandTrackerClass extends Phaser.Events.EventEmitter {
   private rafId = 0;
   private running = false;
   private prevPinching: boolean[] = [false, false];
+  private numHands = DEFAULT_NUM_HANDS;
+  private targetFrameMs = 1000 / DEFAULT_TARGET_FPS;
+  private nextDetectAt = 0;
 
   get isInitialized(): boolean {
     return this.landmarker !== null;
@@ -29,9 +38,16 @@ class HandTrackerClass extends Phaser.Events.EventEmitter {
     return this.videoEl;
   }
 
-  async initCamera(): Promise<HTMLVideoElement> {
+  async initCamera(options: CameraOptions = {}): Promise<HTMLVideoElement> {
     if (!this.stream) {
-      this.stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const camera = { ...DEFAULT_CAMERA, ...options };
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: camera.width },
+          height: { ideal: camera.height },
+          frameRate: { ideal: camera.frameRate, max: camera.frameRate },
+        },
+      });
       const video = document.createElement("video");
       video.srcObject = this.stream;
       video.muted = true;
@@ -46,21 +62,38 @@ class HandTrackerClass extends Phaser.Events.EventEmitter {
     return this.videoEl!;
   }
 
-  async initDetector(): Promise<void> {
-    if (this.landmarker) return;
+  async initDetector(options: HandDetectorOptions = {}): Promise<void> {
+    const numHands = options.numHands ?? DEFAULT_NUM_HANDS;
+    if (this.landmarker) {
+      if (numHands !== this.numHands) {
+        await this.landmarker.setOptions({ numHands });
+        this.numHands = numHands;
+        this.prevPinching = Array(numHands).fill(false);
+      }
+      return;
+    }
     const vision = await FilesetResolver.forVisionTasks("/wasm");
     this.landmarker = await HandLandmarker.createFromOptions(vision, {
       baseOptions: { modelAssetPath: MODEL_URL },
-      numHands: 4,
+      numHands,
       runningMode: "VIDEO",
     });
+    this.numHands = numHands;
+    this.prevPinching = Array(numHands).fill(false);
     console.log("[HandTracker] initialisé");
   }
 
-  start(): void {
+  start(options: TrackerRuntimeOptions = {}): void {
+    if (options.targetFps !== undefined) {
+      this.targetFrameMs = 1000 / Math.max(1, options.targetFps);
+    }
+    if (options.phaseMs !== undefined) {
+      this.nextDetectAt = performance.now() + Math.max(0, options.phaseMs);
+    }
     if (this.running) return;
     this.running = true;
-    this.prevPinching = [false, false, false, false];
+    this.prevPinching = Array(this.numHands).fill(false);
+    if (options.phaseMs === undefined) this.nextDetectAt = 0;
     this.tick();
   }
 
@@ -85,7 +118,7 @@ class HandTrackerClass extends Phaser.Events.EventEmitter {
     );
     const pinches: PinchPoint[] = [];
 
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < this.numHands; i++) {
       const hand = result.landmarks[i] as HandLandmark[] | undefined;
       if (!hand) { this.prevPinching[i] = false; continue; }
 
@@ -102,7 +135,11 @@ class HandTrackerClass extends Phaser.Events.EventEmitter {
 
   private tick = (): void => {
     if (!this.running || !this.videoEl || !this.landmarker) return;
-    if (this.videoEl.readyState >= 2) this.detectAndEmit();
+    const now = performance.now();
+    if (this.videoEl.readyState >= 2 && now >= this.nextDetectAt) {
+      this.detectAndEmit();
+      this.nextDetectAt = now + this.targetFrameMs;
+    }
     this.rafId = requestAnimationFrame(this.tick);
   };
 }
