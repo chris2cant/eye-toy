@@ -37,3 +37,6 @@ test-results/
 .env.local
 .env.*.local
 .vercel
+
+# Graphify output
+graphify-out/

@@ -2,9 +2,10 @@ import Phaser from "phaser";
 import { audioFX } from "../audio/AudioFX";
 import { handTracker } from "../camera/HandTracker";
 import type { LandmarksPayload } from "../camera/HandTracker";
-import { COLOR, HEX, FONT, DEPTH, GAME_CIRCLE_PALETTE } from "../design-system/tokens";
+import { COLOR, HEX, FONT, DEPTH } from "../design-system/tokens";
 import { DwellButton } from "../design-system/DwellButton";
 import { HandCursors } from "../design-system/HandCursors";
+import { buildGameOverFrame, buildGameOverEmblem, burstConfetti, buildGameOverHeader, drawGameOverScorePanel } from "./GameOverSceneFX";
 
 const PALM_LANDMARK = 9;
 const SCORE_COUNT_MAX_MS = 1800;
@@ -19,10 +20,14 @@ export class GameOverScene extends Phaser.Scene {
     super({ key: "GameOverScene" });
   }
 
+  private gameKey = "GameScene";
+
   create() {
     const { width, height } = this.scale;
-    const data = this.scene.settings.data as { score: number };
+    const data = this.scene.settings.data as { score: number; gameName?: string; gameKey?: string };
     const score = data?.score ?? 0;
+    const gameName = data?.gameName ?? "ATTRAPE-LES TOUS";
+    this.gameKey = data?.gameKey ?? "GameScene";
     const cx = width / 2;
 
     this.handPositions = [null, null];
@@ -34,11 +39,11 @@ export class GameOverScene extends Phaser.Scene {
 
     this.add.rectangle(cx, height / 2, width, height, HEX.bgCanvas, 0.72).setDepth(DEPTH.bg);
 
-    this.buildFrame(width, height);
-    this.buildHeader(cx, height, isBest);
+    buildGameOverFrame(this, width, height);
+    buildGameOverHeader(this, cx, height, { isBest, gameName });
     this.buildMenuButton(width, height);
     this.buildReplayButton(cx, height);
-    this.buildScoreSection(cx, height, score, best, isBest);
+    this.buildScoreSection(cx, height, { score, best, isBest });
 
     this.cursors = new HandCursors(this, DEPTH.cursor);
     handTracker.start({ targetFps: 30 });
@@ -51,69 +56,6 @@ export class GameOverScene extends Phaser.Scene {
     this.buildKeyboardHint(cx, height);
   }
 
-  private buildFrame(width: number, height: number) {
-    const gfx = this.add.graphics().setDepth(DEPTH.hud);
-    const pad = 14;
-    const corner = 72;
-
-    gfx.lineStyle(1, HEX.brandPrimary, 0.9);
-    [
-      [pad, pad, pad + corner, pad],
-      [pad, pad, pad, pad + corner],
-      [width - pad - corner, pad, width - pad, pad],
-      [width - pad, pad, width - pad, pad + corner],
-      [pad, height - pad - corner, pad, height - pad],
-      [pad, height - pad, pad + corner, height - pad],
-      [width - pad - corner, height - pad, width - pad, height - pad],
-      [width - pad, height - pad - corner, width - pad, height - pad],
-    ].forEach(([x1, y1, x2, y2]) => {
-      gfx.beginPath();
-      gfx.moveTo(x1, y1);
-      gfx.lineTo(x2, y2);
-      gfx.strokePath();
-    });
-
-    for (let i = 0; i < 28; i++) {
-      const x = Phaser.Math.Between(Math.round(width * 0.08), Math.round(width * 0.92));
-      const y = Phaser.Math.Between(Math.round(height * 0.06), Math.round(height * 0.86));
-      gfx.fillStyle(i % 3 === 0 ? HEX.success : HEX.brandPrimary, 0.25);
-      gfx.fillCircle(x, y, i % 4 === 0 ? 2 : 1);
-    }
-  }
-
-  private buildHeader(cx: number, height: number, isBest: boolean) {
-    this.add
-      .text(cx, height * 0.06, "A T T R A P E - L E S   T O U S", {
-        fontSize: "13px",
-        fontFamily: FONT.identity,
-        color: COLOR.brandPrimary,
-        letterSpacing: 6,
-      })
-      .setOrigin(0.5)
-      .setAlpha(0.8)
-      .setDepth(DEPTH.hud);
-
-    this.add
-      .text(cx, height * 0.15, isBest ? "NOUVEAU RECORD !" : "BIEN JOUE !", {
-        fontSize: "82px",
-        fontFamily: FONT.identity,
-        fontStyle: "900",
-        color: isBest ? COLOR.success : COLOR.brandPrimary,
-        shadow: { offsetX: 0, offsetY: 0, color: isBest ? COLOR.success : COLOR.brandPrimary, blur: 26, fill: true },
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH.hud);
-
-    this.add
-      .text(cx, height * 0.24, "Temps ecoule", {
-        fontSize: "22px",
-        fontFamily: FONT.ui,
-        color: COLOR.textSecondary,
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH.hud);
-  }
-
   private buildMenuButton(_width: number, height: number) {
     this.btnMenu = new DwellButton(this, 118, height * 0.12, {
       label: "← MENU",
@@ -121,6 +63,7 @@ export class GameOverScene extends Phaser.Scene {
       onActivate: () => { audioFX.pop(); this.doQuit(); },
       depth: DEPTH.hud,
       dwellMs: 1000,
+      fillColor: HEX.nightBlue,
     });
   }
 
@@ -143,21 +86,19 @@ export class GameOverScene extends Phaser.Scene {
 
   }
 
-  private buildScoreSection(cx: number, height: number, score: number, best: number, isBest: boolean) {
+  private buildScoreSection(cx: number, height: number, opts: { score: number; best: number; isBest: boolean }) {
+    const { score, best, isBest } = opts;
     const panelY = height * 0.66;
     const panelW = Math.min(660, this.scale.width * 0.76);
     const panelH = height * 0.34;
-    const panel = this.add.graphics().setDepth(DEPTH.hud);
 
-    panel.fillStyle(HEX.bgSurface, 0.58);
-    panel.fillRoundedRect(cx - panelW / 2, panelY - panelH / 2, panelW, panelH, 8);
-    panel.lineStyle(2, HEX.brandPrimary, 0.85);
-    panel.strokeRoundedRect(cx - panelW / 2, panelY - panelH / 2, panelW, panelH, 8);
-    panel.lineStyle(6, HEX.brandPrimary, 0.15);
-    panel.strokeRoundedRect(cx - panelW / 2 + 5, panelY - panelH / 2 + 5, panelW - 10, panelH - 10, 8);
+    drawGameOverScorePanel(this, { cx, panelY, panelW, panelH });
+    buildGameOverEmblem(this, cx, panelY - panelH * 0.40);
+    this.buildScoreCountdown(cx, panelY, panelH, score);
+    this.buildScoreFooter(cx, { panelY, panelH, best, isBest });
+  }
 
-    this.buildScoreEmblem(cx, panelY - panelH * 0.40);
-
+  private buildScoreCountdown(cx: number, panelY: number, panelH: number, score: number): void {
     this.add
       .text(cx, panelY - panelH * 0.22, "SCORE", {
         fontSize: "18px",
@@ -171,7 +112,7 @@ export class GameOverScene extends Phaser.Scene {
     const scoreText = this.add
       .text(cx, panelY + panelH * 0.04, "0", {
         fontSize: "78px",
-        fontFamily: FONT.identity,
+        fontFamily: FONT.display,
         color: COLOR.textPrimary,
         shadow: { offsetX: 0, offsetY: 0, color: COLOR.brandPrimary, blur: 14, fill: true },
       })
@@ -183,14 +124,17 @@ export class GameOverScene extends Phaser.Scene {
       to: score,
       duration: Math.min(score * 12, SCORE_COUNT_MAX_MS),
       ease: "Cubic.Out",
-      onUpdate: (tween) => scoreText.setText(String(Math.round(tween.getValue()))),
+      onUpdate: (tween) => scoreText.setText(String(Math.round(tween.getValue() ?? 0))),
     });
+  }
 
+  private buildScoreFooter(cx: number, opts: { panelY: number; panelH: number; best: number; isBest: boolean }): void {
+    const { panelY, panelH, best, isBest } = opts;
     this.add
       .text(cx, panelY + panelH * 0.32, isBest ? "NOUVEAU MEILLEUR SCORE" : `MEILLEUR : ${best} pts`, {
         fontSize: isBest ? "24px" : "21px",
-        fontFamily: FONT.identity,
-        color: isBest ? COLOR.success : COLOR.success,
+        fontFamily: FONT.display,
+        color: COLOR.success,
       })
       .setOrigin(0.5)
       .setDepth(DEPTH.hud);
@@ -205,55 +149,8 @@ export class GameOverScene extends Phaser.Scene {
       .setDepth(DEPTH.hud);
 
     if (isBest) {
-      this.time.delayedCall(220, () => this.burst(cx, panelY + panelH * 0.30));
-      this.tweens.add({
-        targets: footer,
-        alpha: 0.55,
-        duration: 680,
-        yoyo: true,
-        repeat: -1,
-        ease: "Sine.InOut",
-      });
-    }
-  }
-
-  private buildScoreEmblem(cx: number, y: number) {
-    const gfx = this.add.graphics().setDepth(DEPTH.hud);
-    gfx.lineStyle(2, HEX.brandPrimary, 0.95);
-    gfx.strokeCircle(cx, y, 48);
-    gfx.lineStyle(2, HEX.success, 0.55);
-    gfx.strokeCircle(cx, y, 36);
-    gfx.fillStyle(HEX.brandPrimary, 0.16);
-    gfx.fillCircle(cx, y, 52);
-
-    this.add
-      .text(cx, y + 1, "✋", {
-        fontSize: "42px",
-        fontFamily: FONT.ui,
-        color: COLOR.brandPrimary,
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH.hud);
-  }
-
-  private burst(x: number, y: number) {
-    for (let i = 0; i < 42; i++) {
-      const angle = (Math.PI * 2 * i) / 42;
-      const distance = Phaser.Math.Between(70, 190);
-      const particle = this.add
-        .circle(x, y, Phaser.Math.Between(2, 5), GAME_CIRCLE_PALETTE[i % GAME_CIRCLE_PALETTE.length], 0.95)
-        .setDepth(DEPTH.topUi);
-
-      this.tweens.add({
-        targets: particle,
-        x: x + Math.cos(angle) * distance,
-        y: y + Math.sin(angle) * distance,
-        alpha: 0,
-        scale: 0.25,
-        duration: Phaser.Math.Between(700, 1200),
-        ease: "Cubic.Out",
-        onComplete: () => particle.destroy(),
-      });
+      this.time.delayedCall(220, () => burstConfetti(this, cx, panelY + panelH * 0.30));
+      this.tweens.add({ targets: footer, alpha: 0.55, duration: 680, yoyo: true, repeat: -1, ease: "Sine.InOut" });
     }
   }
 
@@ -286,12 +183,12 @@ export class GameOverScene extends Phaser.Scene {
   }
 
   private doReplay() {
-    this.scene.stop("GameScene");
-    this.scene.start("GameScene");
+    this.scene.stop(this.gameKey);
+    this.scene.start(this.gameKey);
   }
 
   private doQuit() {
-    this.scene.stop("GameScene");
-    this.scene.start("MenuScene", { selectedGameKey: "GameScene" });
+    this.scene.stop(this.gameKey);
+    this.scene.start("MenuScene", { selectedGameKey: this.gameKey });
   }
 }

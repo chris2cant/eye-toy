@@ -1,17 +1,15 @@
 import Phaser from "phaser";
-import { audioFX } from "../audio/AudioFX";
-import { HEX, COLOR, FONT, DEPTH, GAME_CIRCLE_PALETTE } from "../design-system/tokens";
+import { DEPTH, GAME_CIRCLE_PALETTE } from "../design-system/tokens";
+import { triggerPop, triggerExpire } from "./CirclePoolFX";
 
 const MAX_CIRCLES = 5;
 const SPAWN_TWEEN_MS = 220;
-const POP_TWEEN_MS = 180;
-const EXPIRE_TWEEN_MS = 350;
 const HIT_TOLERANCE = 0;
 const PALETTE = [...GAME_CIRCLE_PALETTE];
 const PARTICLE_COUNT = 5;
 const PARTICLE_ORBIT_FACTOR = 1.65;
-const PARTICLE_SPEED = 0.00072; // rad/ms
-const PULSE_DURATION = 1300; // ms per ring cycle
+const PARTICLE_SPEED = 0.00072;
+const PULSE_DURATION = 1300;
 
 export type HandBounds = { x1: number; y1: number; x2: number; y2: number };
 export type CircleConfig = { radius: number; expireDelay: number; points: number };
@@ -31,14 +29,6 @@ type GameCircle = {
   active: boolean;
 };
 
-const FLOAT_TEXT_STYLE: Phaser.Types.GameObjects.Text.TextStyle = {
-  fontSize: "28px",
-  fontFamily: FONT.identity,
-  color: COLOR.brandPrimary,
-  stroke: COLOR.bgCanvas,
-  strokeThickness: 3,
-};
-
 export class CirclePool {
   private circles: GameCircle[] = [];
   private readonly timerGraphics: Phaser.GameObjects.Graphics;
@@ -50,56 +40,16 @@ export class CirclePool {
   get count(): number { return this.circles.length; }
   get isAtCapacity(): boolean { return this.circles.length >= MAX_CIRCLES; }
 
-  spawn(x: number, y: number, cfg: CircleConfig, onExpired: (scoreDelta: number) => void): void {
+  spawn(spawnX: number, spawnY: number, cfg: CircleConfig, onExpired: (scoreDelta: number) => void): void {
     const { radius, expireDelay, points } = cfg;
     const color = Phaser.Utils.Array.GetRandom(PALETTE) as number;
 
-    const container = this.scene.add.container(x, y).setDepth(DEPTH.game).setScale(0);
-
-    // 2 pulsing rings expanding outward, staggered
-    const pulseRings: Phaser.GameObjects.Graphics[] = [];
-    const pulseTweens: Phaser.Tweens.Tween[] = [];
-    for (let i = 0; i < 2; i++) {
-      const ring = this.scene.add.graphics();
-      ring.lineStyle(2, color, 0.65);
-      ring.strokeCircle(0, 0, radius * 0.9);
-      ring.setAlpha(0).setScale(1);
-      container.add(ring);
-      pulseRings.push(ring);
-
-      const tween = this.scene.tweens.add({
-        targets: ring,
-        scaleX: 2.4,
-        scaleY: 2.4,
-        alpha: { from: 0.65, to: 0 },
-        duration: PULSE_DURATION,
-        delay: i * (PULSE_DURATION / 2),
-        repeat: -1,
-        ease: "Sine.Out",
-      });
-      pulseTweens.push(tween);
-    }
-
-    // Opaque core — readable on any webcam background
+    const container = this.scene.add.container(spawnX, spawnY).setDepth(DEPTH.game).setScale(0);
+    const { pulseRings, pulseTweens } = this.spawnPulseRings(container, color, radius);
     const core = this.scene.add.graphics();
     this.drawCore(core, color, radius);
     container.add(core);
-
-    // Orbiting particles
-    const orbitR = radius * PARTICLE_ORBIT_FACTOR;
-    const particles: Phaser.GameObjects.Graphics[] = [];
-    for (let i = 0; i < PARTICLE_COUNT; i++) {
-      const p = this.scene.add.graphics();
-      const pr = i % 2 === 0 ? 3.5 : 2.5;
-      p.fillStyle(color, 0.9);
-      p.fillCircle(0, 0, pr);
-      p.fillStyle(0xffffff, 0.4);
-      p.fillCircle(-pr * 0.3, -pr * 0.3, pr * 0.5);
-      const a0 = (i * Math.PI * 2) / PARTICLE_COUNT;
-      p.setPosition(Math.cos(a0) * orbitR, Math.sin(a0) * orbitR);
-      container.add(p);
-      particles.push(p);
-    }
+    const particles = this.spawnOrbitParticles(container, color, radius);
 
     const circle: GameCircle = {
       container, core, pulseRings, pulseTweens, particles,
@@ -118,12 +68,56 @@ export class CirclePool {
     });
 
     this.circles.push(circle);
-    this.scene.tweens.add({
-      targets: container,
-      scale: 1,
-      duration: SPAWN_TWEEN_MS,
-      ease: "Back.Out",
-    });
+    this.scene.tweens.add({ targets: container, scale: 1, duration: SPAWN_TWEEN_MS, ease: "Back.Out" });
+  }
+
+  private spawnPulseRings(
+    container: Phaser.GameObjects.Container,
+    color: number,
+    radius: number,
+  ): { pulseRings: Phaser.GameObjects.Graphics[]; pulseTweens: Phaser.Tweens.Tween[] } {
+    const pulseRings: Phaser.GameObjects.Graphics[] = [];
+    const pulseTweens: Phaser.Tweens.Tween[] = [];
+    for (let index = 0; index < 2; index++) {
+      const ring = this.scene.add.graphics();
+      ring.lineStyle(2, color, 0.65);
+      ring.strokeCircle(0, 0, radius * 0.9);
+      ring.setAlpha(0).setScale(1);
+      container.add(ring);
+      pulseRings.push(ring);
+      pulseTweens.push(this.scene.tweens.add({
+        targets: ring,
+        scaleX: 2.4, scaleY: 2.4,
+        alpha: { from: 0.65, to: 0 },
+        duration: PULSE_DURATION,
+        delay: index * (PULSE_DURATION / 2),
+        repeat: -1,
+        ease: "Sine.Out",
+      }));
+    }
+    return { pulseRings, pulseTweens };
+  }
+
+  private spawnOrbitParticles(
+    container: Phaser.GameObjects.Container,
+    color: number,
+    radius: number,
+  ): Phaser.GameObjects.Graphics[] {
+    const orbitR = radius * PARTICLE_ORBIT_FACTOR;
+    const particles: Phaser.GameObjects.Graphics[] = [];
+    for (let index = 0; index < PARTICLE_COUNT; index++) {
+      const particle = this.scene.add.graphics();
+      const particleRadius = index % 2 === 0 ? 3.5 : 2.5;
+      particle.fillStyle(color, 0.9);
+      particle.fillCircle(0, 0, particleRadius);
+      particle.fillStyle(0xffffff, 0.4);
+      particle.fillCircle(-particleRadius * 0.3, -particleRadius * 0.3, particleRadius * 0.5);
+      const angle = (index * Math.PI * 2) / PARTICLE_COUNT;
+      particle.setPosition(Math.cos(angle) * orbitR, Math.sin(angle) * orbitR);
+      container.add(particle);
+      particles.push(particle);
+    }
+    return particles;
   }
 
   private drawCore(gfx: Phaser.GameObjects.Graphics, color: number, radius: number): void {
@@ -147,85 +141,14 @@ export class CirclePool {
     circle.active = false;
     circle.expireTimer.destroy();
     this.circles.splice(index, 1);
-    circle.pulseTweens.forEach((t) => t.stop());
-    onScore(circle.points);
-    audioFX.pop();
-    this.spawnFloatText(circle.container.x, circle.container.y, `+${circle.points}`, "#ffff00");
-    this.animatePop(circle);
-  }
-
-  private animatePop(circle: GameCircle): void {
-    const orbitR = circle.radius * PARTICLE_ORBIT_FACTOR;
-    // Particles burst outward
-    circle.particles.forEach((p, i) => {
-      const a = (i * Math.PI * 2) / PARTICLE_COUNT;
-      this.scene.tweens.add({
-        targets: p,
-        x: Math.cos(a) * orbitR * 3.2,
-        y: Math.sin(a) * orbitR * 3.2,
-        alpha: 0,
-        scaleX: 1.8,
-        scaleY: 1.8,
-        duration: POP_TWEEN_MS * 2.2,
-        ease: "Power2.Out",
-      });
-    });
-    // Core flash
-    this.scene.tweens.add({
-      targets: circle.core,
-      scaleX: 2.2,
-      scaleY: 2.2,
-      alpha: 0,
-      duration: POP_TWEEN_MS,
-      ease: "Power2.Out",
-    });
-    // Rings final burst
-    circle.pulseRings.forEach((ring) => {
-      this.scene.tweens.add({
-        targets: ring,
-        scaleX: 3.5,
-        scaleY: 3.5,
-        alpha: 0,
-        duration: POP_TWEEN_MS * 1.8,
-        ease: "Power2.Out",
-      });
-    });
-    this.scene.time.delayedCall(POP_TWEEN_MS * 2.5, () => circle.container.destroy());
+    triggerPop(this.scene, circle, onScore);
   }
 
   private expireAt(index: number, onScore: (scoreDelta: number) => void): void {
     const circle = this.circles[index];
     circle.active = false;
     this.circles.splice(index, 1);
-    onScore(-5);
-    audioFX.expire();
-    this.spawnFloatText(circle.container.x, circle.container.y, "-5", "#ff4444");
-    circle.pulseTweens.forEach((t) => t.stop());
-    this.drawCore(circle.core, HEX.danger, circle.radius);
-    this.scene.tweens.add({
-      targets: circle.container,
-      scaleX: 0,
-      scaleY: 0,
-      alpha: 0,
-      duration: EXPIRE_TWEEN_MS,
-      ease: "Power2.In",
-      onComplete: () => circle.container.destroy(),
-    });
-  }
-
-  private spawnFloatText(x: number, y: number, label: string, color: string): void {
-    const txt = this.scene.add
-      .text(x, y, label, { ...FLOAT_TEXT_STYLE, color })
-      .setOrigin(0.5)
-      .setDepth(15);
-    this.scene.tweens.add({
-      targets: txt,
-      y: y - 60,
-      alpha: 0,
-      duration: 600,
-      ease: "Power1.Out",
-      onComplete: () => txt.destroy(),
-    });
+    triggerExpire(this.scene, circle, onScore, this.drawCore.bind(this));
   }
 
   checkAndProcess(bounds: HandBounds, onScore: (scoreDelta: number) => void): void {
@@ -248,9 +171,9 @@ export class CirclePool {
       // Update orbiting particle positions
       const baseAngle = now * PARTICLE_SPEED;
       const orbitR = circle.radius * PARTICLE_ORBIT_FACTOR;
-      circle.particles.forEach((p, i) => {
-        const a = baseAngle + (i * Math.PI * 2) / PARTICLE_COUNT;
-        p.setPosition(Math.cos(a) * orbitR, Math.sin(a) * orbitR);
+      circle.particles.forEach((particle, index) => {
+        const angle = baseAngle + (index * Math.PI * 2) / PARTICLE_COUNT;
+        particle.setPosition(Math.cos(angle) * orbitR, Math.sin(angle) * orbitR);
       });
 
       // Countdown arc in world coords (outside container scale)
@@ -270,7 +193,7 @@ export class CirclePool {
   clearAll(): void {
     this.circles.forEach((circle) => {
       circle.expireTimer.destroy();
-      circle.pulseTweens.forEach((t) => t.stop());
+      circle.pulseTweens.forEach((tween) => tween.stop());
       circle.container.destroy();
     });
     this.circles = [];
