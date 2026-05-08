@@ -65,6 +65,7 @@ export class SkeletonScene extends Phaser.Scene {
       onActivate: () => this.doQuit(),
       depth: DEPTH.hud,
       dwellMs: 1000,
+      fillColor: HEX.nightBlue,
     });
 
     const videoEl = await handTracker.initCamera();

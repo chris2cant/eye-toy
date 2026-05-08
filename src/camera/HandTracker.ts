@@ -68,7 +68,7 @@ class HandTrackerClass extends Phaser.Events.EventEmitter {
       if (numHands !== this.numHands) {
         await this.landmarker.setOptions({ numHands });
         this.numHands = numHands;
-        this.prevPinching = Array(numHands).fill(false);
+        this.prevPinching = new Array<boolean>(numHands).fill(false);
       }
       return;
     }
@@ -79,7 +79,7 @@ class HandTrackerClass extends Phaser.Events.EventEmitter {
       runningMode: "VIDEO",
     });
     this.numHands = numHands;
-    this.prevPinching = Array(numHands).fill(false);
+    this.prevPinching = new Array<boolean>(numHands).fill(false);
     console.log("[HandTracker] initialisé");
   }
 
@@ -92,7 +92,7 @@ class HandTrackerClass extends Phaser.Events.EventEmitter {
     }
     if (this.running) return;
     this.running = true;
-    this.prevPinching = Array(this.numHands).fill(false);
+    this.prevPinching = new Array<boolean>(this.numHands).fill(false);
     if (options.phaseMs === undefined) this.nextDetectAt = 0;
     this.tick();
   }

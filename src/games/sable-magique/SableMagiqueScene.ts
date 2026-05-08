@@ -1,37 +1,28 @@
 import Phaser from "phaser";
 import { handTracker } from "../../camera/HandTracker";
-import type { LandmarksPayload } from "../../camera/HandTracker";
 import { COLOR, FONT, DEPTH, HEX } from "../../design-system/tokens";
 import { DwellButton } from "../../design-system/DwellButton";
-import { HandCursors } from "../../design-system/HandCursors";
 import { WebcamLayer } from "../../scenes/WebcamLayer";
 import { SandParticleSystem } from "./SandParticleSystem";
+import { MotionDetector, type MotionCluster } from "./MotionDetector";
 import { PARTICLES } from "./config";
 
-const PALM_LANDMARK = 9;
-// Fingertips + DIP joints (10 emission points per hand)
-const FINGER_LANDMARKS = [4, 8, 12, 16, 20, 3, 7, 11, 15, 19];
-const SAND_TRACKER_FPS = 24;
 const SAND_WEBCAM_FPS = 20;
+
+const SCALE_STEPS = [0.25, 0.5, 1, 2, 4, 8, 16] as const;
+const SCALE_DEFAULT_IDX = 2; // 1×
 
 export class SableMagiqueScene extends Phaser.Scene {
   private webcam!: WebcamLayer;
   private particleSystem!: SandParticleSystem;
+  private motionDetector!: MotionDetector;
   private btnBack!: DwellButton;
-  private cursors!: HandCursors;
   private scoreTxt!: Phaser.GameObjects.Text;
-  // Palm positions used for cursor + dwell button
+  // Top-2 motion clusters used to drive DwellButton
   private handPositions: ({ x: number; y: number } | null)[] = [null, null];
-  // Per-finger positions and velocities [hand][finger]
-  private fingerPositions: ({ x: number; y: number } | null)[][] = [
-    Array(FINGER_LANDMARKS.length).fill(null),
-    Array(FINGER_LANDMARKS.length).fill(null),
-  ];
-  private fingerVelocities: number[][] = [
-    Array(FINGER_LANDMARKS.length).fill(0),
-    Array(FINGER_LANDMARKS.length).fill(0),
-  ];
   private lastScoreTotal = -1;
+  private sandScaleIdx = SCALE_DEFAULT_IDX;
+  private sandScaleTxt!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: "SableMagiqueScene" });
@@ -40,25 +31,27 @@ export class SableMagiqueScene extends Phaser.Scene {
   async create() {
     const { width, height } = this.scale;
 
+    // Camera only — no MediaPipe, no neural-net inference on main thread
     const videoEl = await handTracker.initCamera();
     this.webcam = new WebcamLayer(this);
     this.webcam.setup(videoEl, width, height);
 
-    await handTracker.initDetector({ numHands: 2 });
-    handTracker.start({ targetFps: SAND_TRACKER_FPS });
-    handTracker.on("landmarks", this.onLandmarks, this);
+    // Pixel-diff motion detection runs entirely in a Web Worker
+    this.motionDetector = new MotionDetector(videoEl, width, height, this.onClusters);
 
     this.particleSystem = new SandParticleSystem(this);
-
-    this.cursors = new HandCursors(this, DEPTH.cursor);
     this.buildUI(width, height);
 
     this.scale.on("resize", (gameSize: Phaser.Structs.Size) => {
       this.particleSystem.updateBounds(gameSize.width, gameSize.height);
     });
 
+    this.input.keyboard!
+      .on("keydown-UP", () => this.changeSandScale(+1))
+      .on("keydown-DOWN", () => this.changeSandScale(-1));
+
     this.events.once("shutdown", () => {
-      handTracker.off("landmarks", this.onLandmarks, this);
+      this.motionDetector.destroy();
       this.scale.off("resize");
     });
   }
@@ -72,7 +65,7 @@ export class SableMagiqueScene extends Phaser.Scene {
     this.scoreTxt = this.add
       .text(width - 20, 14, "SABLE  0", {
         fontSize: "22px",
-        fontFamily: FONT.identity,
+        fontFamily: FONT.display,
         color: COLOR.warning,
         shadow: { offsetX: 0, offsetY: 0, color: COLOR.warning, blur: 12, fill: true },
       })
@@ -85,6 +78,7 @@ export class SableMagiqueScene extends Phaser.Scene {
       onActivate: () => this.scene.start("MenuScene", { selectedGameKey: this.sys.settings.key }),
       depth: DEPTH.hud,
       dwellMs: 1000,
+      fillColor: HEX.nightBlue,
     });
 
     this.add
@@ -95,72 +89,66 @@ export class SableMagiqueScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(DEPTH.hud);
+
+    this.buildSandControls(width);
   }
 
-  private onLandmarks = ({ hands }: LandmarksPayload): void => {
-    const { width, height } = this.scale;
-    const mapper = this.webcam.getLandmarkMapper(width, height);
+  private buildSandControls(width: number): void {
+    const btnStyle = { fontSize: "22px", fontFamily: FONT.display, color: COLOR.warning };
+    this.add
+      .text(width / 2 - 60, 14, "−", btnStyle)
+      .setOrigin(0.5, 0)
+      .setDepth(DEPTH.topUi)
+      .setInteractive({ useHandCursor: true })
+      .on("pointerdown", () => this.changeSandScale(-1));
 
-    hands.forEach((hand, i) => {
-      if (!this.fingerPositions[i]) {
-        this.fingerPositions[i] = Array(FINGER_LANDMARKS.length).fill(null);
-        this.fingerVelocities[i] = Array(FINGER_LANDMARKS.length).fill(0);
-      }
-      if (!hand || hand.length === 0) {
-        this.handPositions[i] = null;
-        this.fingerPositions[i].fill(null);
-        this.fingerVelocities[i].fill(0);
-        return;
-      }
+    this.sandScaleTxt = this.add
+      .text(width / 2, 14, this.sandScaleLabel(), {
+        fontSize: "18px",
+        fontFamily: FONT.display,
+        color: COLOR.textMuted,
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(DEPTH.topUi);
 
-      // Palm for cursor / dwell button
-      const palm = hand[PALM_LANDMARK];
-      this.handPositions[i] = mapper(palm.x, palm.y);
+    this.add
+      .text(width / 2 + 60, 14, "+", btnStyle)
+      .setOrigin(0.5, 0)
+      .setDepth(DEPTH.topUi)
+      .setInteractive({ useHandCursor: true })
+      .on("pointerdown", () => this.changeSandScale(+1));
+  }
 
-      // Each phalange for sand emission
-      FINGER_LANDMARKS.forEach((lmIdx, fi) => {
-        const lm = hand[lmIdx];
-        if (!lm || lm.x < 0 || lm.x > 1 || lm.y < 0 || lm.y > 1) {
-          this.fingerPositions[i][fi] = null;
-          this.fingerVelocities[i][fi] = 0;
-          return;
-        }
-        const pos = mapper(lm.x, lm.y);
-        const prev = this.fingerPositions[i][fi];
-        if (prev) {
-          const dx = pos.x - prev.x;
-          const dy = pos.y - prev.y;
-          this.fingerVelocities[i][fi] = Math.sqrt(dx * dx + dy * dy);
-        } else {
-          this.fingerVelocities[i][fi] = 0;
-        }
-        this.fingerPositions[i][fi] = pos;
-      });
-    });
+  private sandScaleLabel(): string {
+    return `grains ×${SCALE_STEPS[this.sandScaleIdx]}`;
+  }
+
+  private changeSandScale(dir: 1 | -1): void {
+    this.sandScaleIdx = Math.max(0, Math.min(SCALE_STEPS.length - 1, this.sandScaleIdx + dir));
+    this.sandScaleTxt.setText(this.sandScaleLabel());
+  }
+
+  private onClusters = (clusters: MotionCluster[]): void => {
+    const scale = SCALE_STEPS[this.sandScaleIdx];
+
+    // Top-2 clusters by intensity drive the DwellButton
+    const sorted = clusters.slice().sort((clusterA, clusterB) => clusterB.intensity - clusterA.intensity);
+    this.handPositions[0] = sorted[0] ?? null;
+    this.handPositions[1] = sorted[1] ?? null;
+
+    for (const cl of clusters) {
+      const count = Math.max(1, Math.round(cl.intensity * PARTICLES.BURST_MAX * scale));
+      this.particleSystem.spawnAt(cl.x, cl.y, count);
+    }
   };
 
   update(time: number, delta: number): void {
     if (!this.webcam) return;
     this.webcam.render(time, SAND_WEBCAM_FPS);
+    this.motionDetector.tick();
     this.particleSystem.update(delta);
-
-    this.fingerPositions.forEach((fingers, i) => {
-      fingers.forEach((pos, fi) => {
-        if (!pos) return;
-        const vel = this.fingerVelocities[i][fi];
-        this.fingerVelocities[i][fi] = 0;
-        if (vel > PARTICLES.MOTION_THRESHOLD) {
-          const count = Math.min(
-            Math.ceil(vel * PARTICLES.VELOCITY_SCALE),
-            Math.ceil(PARTICLES.BURST_MAX / FINGER_LANDMARKS.length),
-          );
-          this.particleSystem.spawnAt(pos.x, pos.y, count);
-        }
-      });
-    });
-
-    this.cursors.update(this.handPositions);
     this.btnBack.update(this.handPositions, delta);
+
     if (this.particleSystem.total !== this.lastScoreTotal) {
       this.lastScoreTotal = this.particleSystem.total;
       this.scoreTxt.setText(`SABLE  ${this.particleSystem.total.toLocaleString("fr-FR")}`);
