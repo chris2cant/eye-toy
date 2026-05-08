@@ -1,0 +1,18 @@
+# Fichiers auto-générés par MediaPipe/Emscripten
+public/wasm/
+
+# Assets binaires (sprites, audio, images)
+public/assets/
+
+# Stories / roadmap (pas d'intérêt architectural)
+todo/
+
+# Standards gitignore
+node_modules/
+dist/
+.git/
+.vite/
+*.lock
+*.log
+coverage/
+graphify-out/
