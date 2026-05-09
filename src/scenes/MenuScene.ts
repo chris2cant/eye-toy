@@ -13,7 +13,7 @@ import type { Updatable, MenuSceneData } from "./menu/MenuSceneData";
 import { computeCardLayout, renderWebcamToCanvas } from "./menu/MenuSceneLayout";
 import type { CarouselConfig } from "./menu/MenuSceneLayout";
 import { createMenuDecorations, createMenuTitle } from "./menu/MenuSceneDecorations";
-import { createCameraStatus, createStatsBar } from "./menu/MenuSceneStats";
+import { createCameraStatus } from "./menu/MenuSceneStats";
 import type { CameraStatusWidget } from "./menu/MenuSceneStats";
 
 const PALM_LANDMARK = 9;
@@ -47,7 +47,7 @@ export class MenuScene extends Phaser.Scene {
     this.allBtns = [];
 
     this.setupWebcam(width, height);
-    this.add.rectangle(cx, height / 2, width, height, HEX.cream, 0.78).setDepth(DEPTH.bg);
+    this.add.rectangle(cx, height / 2, width, height, HEX.cream, 0.52).setDepth(DEPTH.bg);
 
     createMenuDecorations(this, width, height);
     createMenuTitle(this, cx, height);
@@ -56,7 +56,6 @@ export class MenuScene extends Phaser.Scene {
     this.buildNavArrows(width, height);
     this.buildCarousel(height);
     this.buildDots(width, height, cx);
-    createStatsBar(this, width, height, cx);
 
     this.updateCard();
     this.cursors = new HandCursors(this, DEPTH.cursor);
@@ -161,7 +160,7 @@ export class MenuScene extends Phaser.Scene {
     const tex = this.textures.createCanvas("webcam-menu", width, height);
     if (!tex) return;
     this.webcamTex = tex;
-    this.add.image(width / 2, height / 2, "webcam-menu").setDepth(DEPTH.webcam).setAlpha(0.26);
+    this.add.image(width / 2, height / 2, "webcam-menu").setDepth(DEPTH.webcam).setAlpha(0.65);
   }
 
   private onLandmarks = ({ hands }: LandmarksPayload): void => {

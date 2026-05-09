@@ -13,7 +13,6 @@ const SCORE_COUNT_MAX_MS = 1800;
 export class GameOverScene extends Phaser.Scene {
   private cursors!: HandCursors;
   private btnReplay!: DwellButton;
-  private btnMenu!: DwellButton;
   private handPositions: ({ x: number; y: number } | null)[] = [null, null];
 
   constructor() {
@@ -37,11 +36,11 @@ export class GameOverScene extends Phaser.Scene {
     const isBest = score >= previousBest && score > 0;
     localStorage.setItem("eyetoy_best", String(best));
 
+    this.sound.play("sfx-win", { volume: 0.7 });
     this.add.rectangle(cx, height / 2, width, height, HEX.bgCanvas, 0.72).setDepth(DEPTH.bg);
 
     buildGameOverFrame(this, width, height);
     buildGameOverHeader(this, cx, height, { isBest, gameName });
-    this.buildMenuButton(width, height);
     this.buildReplayButton(cx, height);
     this.buildScoreSection(cx, height, { score, best, isBest });
 
@@ -54,17 +53,6 @@ export class GameOverScene extends Phaser.Scene {
     this.input.keyboard!.on("keydown-Q", () => this.doQuit());
 
     this.buildKeyboardHint(cx, height);
-  }
-
-  private buildMenuButton(_width: number, height: number) {
-    this.btnMenu = new DwellButton(this, 118, height * 0.12, {
-      label: "← MENU",
-      fontSize: "20px",
-      onActivate: () => { audioFX.pop(); this.doQuit(); },
-      depth: DEPTH.hud,
-      dwellMs: 1000,
-      fillColor: HEX.nightBlue,
-    });
   }
 
   private buildReplayButton(cx: number, height: number) {
@@ -167,7 +155,6 @@ export class GameOverScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     this.cursors.update(this.handPositions);
     this.btnReplay.update(this.handPositions, delta);
-    this.btnMenu.update(this.handPositions, delta);
   }
 
   private buildKeyboardHint(cx: number, height: number) {

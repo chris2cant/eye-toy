@@ -1,5 +1,6 @@
-import Phaser from "phaser";
-import { COLOR, FONT, DEPTH } from "../design-system/tokens";
+import { runCountdown } from "../design-system/components/Countdown";
+
+export { runCountdown as runCountdownSequence };
 
 export const GAME_DURATION = 60;
 export const GAME_TRACKER_FPS = 24;
@@ -22,30 +23,3 @@ export const TIERS: DifficultyTier[] = [
   { threshold: 0.66, spawnDelay: 1000, radius: 26, expireDelay: 3000, points: 20 },
 ];
 
-const COUNTDOWN_STEPS = ["3", "2", "1", "GO!"];
-
-export function runCountdownSequence(scene: Phaser.Scene, onComplete: () => void): void {
-  let index = 0;
-  const showNext = () => {
-    if (index >= COUNTDOWN_STEPS.length) { onComplete(); return; }
-    const step = COUNTDOWN_STEPS[index];
-    const isGo = step === "GO!";
-    const { width, height } = scene.scale;
-    const txt = scene.add.text(width / 2, height / 2, step, {
-      fontSize: "160px", fontFamily: FONT.display, fontStyle: "900",
-      color: isGo ? COLOR.brandPrimary : COLOR.textPrimary,
-      stroke: COLOR.bgCanvas, strokeThickness: 6,
-      shadow: isGo ? { offsetX: 0, offsetY: 0, color: COLOR.brandPrimary, blur: 30, fill: true } : undefined,
-    }).setOrigin(0.5).setScale(2).setDepth(DEPTH.topUi);
-    index++;
-    scene.tweens.add({
-      targets: txt, scale: 1, duration: 400, ease: "Power2.Out",
-      onComplete: () => {
-        scene.time.delayedCall(isGo ? 400 : 500, () => {
-          scene.tweens.add({ targets: txt, alpha: 0, duration: 200, onComplete: () => { txt.destroy(); showNext(); } });
-        });
-      },
-    });
-  };
-  showNext();
-}

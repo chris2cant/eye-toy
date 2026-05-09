@@ -4,7 +4,6 @@ import { bodyTracker } from "../camera/BodyTracker";
 import type { BodyPayload, PoseLandmark } from "../camera/BodyTracker";
 import { WebcamLayer } from "./WebcamLayer";
 import { COLOR, HEX, DEPTH, FONT } from "../design-system/tokens";
-import { DwellButton } from "../design-system/DwellButton";
 
 const POSE_CONNECTIONS: [number, number][] = [
   [0, 1], [1, 2], [2, 3], [3, 7],
@@ -30,7 +29,6 @@ export class SkeletonScene extends Phaser.Scene {
   private webcam!: WebcamLayer;
   private gfx!: Phaser.GameObjects.Graphics;
   private poseLandmarks: PoseLandmark[] = [];
-  private btnBack!: DwellButton;
   private handPositions: ({ x: number; y: number } | null)[] = [null, null];
   private nextVisualRenderAt = 0;
 
@@ -58,15 +56,6 @@ export class SkeletonScene extends Phaser.Scene {
       .setDepth(DEPTH.hud);
 
     this.buildLegend(width, height);
-
-    this.btnBack = new DwellButton(this, 100, height * 0.12, {
-      label: "← MENU",
-      fontSize: "20px",
-      onActivate: () => this.doQuit(),
-      depth: DEPTH.hud,
-      dwellMs: 1000,
-      fillColor: HEX.nightBlue,
-    });
 
     const videoEl = await handTracker.initCamera();
     this.webcam.setup(videoEl, width, height);
@@ -140,13 +129,13 @@ export class SkeletonScene extends Phaser.Scene {
     this.updateHandPositionsFromPose();
   };
 
-  update(time: number, delta: number) {
+  update(time: number, _delta: number) {
     if (time >= this.nextVisualRenderAt) {
       this.webcam.render();
       this.drawSkeleton();
       this.nextVisualRenderAt = time + SKELETON_RENDER_FRAME_MS;
     }
-    this.btnBack?.update(this.handPositions, delta);
+    void _delta;
   }
 
   private isVisible(lm: PoseLandmark): boolean {

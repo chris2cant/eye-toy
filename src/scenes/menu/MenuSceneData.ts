@@ -60,6 +60,15 @@ export const GAMES: GameEntry[] = [
     accentCss: COLOR.punchyPink,
   },
   {
+    key: "PaintCleanScene",
+    name: "Nettoyage Peinture",
+    desc: "Efface la peinture en bougeant\ntes mains, tes bras et ton corps.",
+    tag: "SPEED",
+    icon: "🧼",
+    accentHex: HEX.success,
+    accentCss: COLOR.success,
+  },
+  {
     key: "KungFooScene",
     name: "Kung Foo",
     desc: "Des ninjas débarquent !\nFrappe-les avec tes mains.",

@@ -8,6 +8,7 @@ import { SkeletonScene } from "./scenes/SkeletonScene";
 import { SableMagiqueScene } from "./games/sable-magique/SableMagiqueScene";
 import { JeuDeFicelleScene } from "./games/cats-cradle/JeuDeFicelleScene";
 import { PaintScene } from "./games/paint/PaintScene";
+import { PaintCleanScene } from "./games/paint-clean/PaintCleanScene";
 import { KungFooScene } from "./games/kung-foo/KungFooScene";
 import { SimonScene } from "./games/simon/SimonScene";
 import { DebugScene } from "./scenes/DebugScene";
@@ -29,6 +30,7 @@ export const config: Phaser.Types.Core.GameConfig = {
     SableMagiqueScene,
     JeuDeFicelleScene,
     PaintScene,
+    PaintCleanScene,
     SimonScene,
     DebugScene,
     DesignSystemScene,

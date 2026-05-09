@@ -169,6 +169,32 @@ Position : `x = 100, y = height * 0.12` (coin supérieur gauche, respecte la rè
 - MediaPipe loads models asynchronously; always await `landmarker.setOptions(...)` before starting the detection loop.
 - Phaser and MediaPipe each have their own loop — never block the main thread inside `HandTracker`.
 
+## Code quality contract
+
+Référence détaillée: `.agents/code-quality.md`
+
+Règles obligatoires pour toute tâche:
+
+1. **Definition of Done qualité**
+   - `pnpm lint` doit finir avec `0 error` et `0 warning`.
+2. **Limites de structure**
+   - Complexité max: `10`
+   - Lignes max par fonction: `40`
+   - Lignes max par fichier: `200`
+   - Paramètres max par fonction: `4` (sinon utiliser un objet d'options)
+3. **Lisibilité**
+   - Utiliser des early returns
+   - Extraire la logique non triviale en helpers nommés
+   - Utiliser des noms explicites et stables
+4. **Refactor de fichiers volumineux**
+   - Extraire vers des modules ciblés (`*Config.ts`, `*UI.ts`, `*Gameplay.ts`, `*Effects.ts`)
+   - Conserver la scène principale comme orchestrateur
+   - Ne pas changer le comportement gameplay lors de l'extraction
+5. **Validation avant rendu**
+   - Lancer `pnpm lint`
+   - Corriger tous les warnings
+   - Finaliser seulement après état lint propre
+
 ## Workflow de développement
 
 Quand l'utilisateur demande de continuer le dev :

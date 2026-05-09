@@ -3,7 +3,6 @@ import { audioFX } from "../audio/AudioFX";
 import { handTracker } from "../camera/HandTracker";
 import type { LandmarksPayload } from "../camera/HandTracker";
 import { COLOR, FONT, DEPTH, HEX } from "../design-system/tokens";
-import { DwellButton } from "../design-system/DwellButton";
 import { CirclePool, computeHandBounds } from "./CirclePool";
 import type { HandBounds, CircleConfig } from "./CirclePool";
 import { WebcamLayer } from "./WebcamLayer";
@@ -28,7 +27,6 @@ export class GameScene extends Phaser.Scene {
   private spawnTimer!: Phaser.Time.TimerEvent;
   private gameStartTimestamp = 0;
   private lastTickSecond = GAME_DURATION;
-  private btnBack!: DwellButton;
   private handPositions: ({ x: number; y: number } | null)[] = [null, null];
   private nextTimerArcRenderAt = 0;
   private backgroundMusic: Phaser.Sound.BaseSound | null = null;
@@ -39,14 +37,7 @@ export class GameScene extends Phaser.Scene {
     const { width, height } = this.scale;
     this.pool = new CirclePool(this);
     this.webcam = new WebcamLayer(this);
-    this.btnBack = new DwellButton(this, 100, height * 0.12, {
-      label: "← MENU",
-      fontSize: "20px",
-      onActivate: () => this.scene.start("MenuScene", { selectedGameKey: this.sys.settings.key }),
-      depth: DEPTH.hud,
-      dwellMs: 1000,
-      fillColor: HEX.nightBlue,
-    });
+    this.input.keyboard?.on("keydown-Q", this.onQuitToMenu);
     this.debugGraphics = this.add.graphics().setDepth(DEPTH.topUi);
     const onDebug = (active: boolean) => {
       this.debugMode = active;
@@ -55,6 +46,7 @@ export class GameScene extends Phaser.Scene {
     this.game.events.on("debug:toggle", onDebug);
     this.events.once("shutdown", () => this.game.events.off("debug:toggle", onDebug));
     this.events.once("shutdown", () => this.stopBackgroundMusic());
+    this.events.once("shutdown", () => this.input.keyboard?.off("keydown-Q", this.onQuitToMenu));
     try {
       const videoEl = await handTracker.initCamera();
       this.webcam.setup(videoEl, width, height);
@@ -170,14 +162,13 @@ export class GameScene extends Phaser.Scene {
     });
   };
 
-  update(time: number, delta: number) {
+  update(time: number, _delta: number) {
     this.webcam.render(time, GAME_WEBCAM_FPS);
     this.renderDebugBounds();
     if (time >= this.nextTimerArcRenderAt) {
       this.pool.renderTimerArcs(this.time.now);
       this.nextTimerArcRenderAt = time + TIMER_ARC_FRAME_MS;
     }
-    this.btnBack.update(this.handPositions, delta);
     if (this.gameActive) {
       const elapsed = (performance.now() - this.gameStartTimestamp) / 1000;
       const newTimeLeft = Math.max(0, GAME_DURATION - Math.floor(elapsed));
@@ -187,6 +178,10 @@ export class GameScene extends Phaser.Scene {
       }
     }
   }
+
+  private readonly onQuitToMenu = (): void => {
+    this.scene.start("MenuScene", { selectedGameKey: this.sys.settings.key });
+  };
 
   private renderDebugBounds() {
     if (!this.debugMode) return;
