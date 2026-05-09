@@ -24,7 +24,6 @@ export const JUMP_DURATION_MAX = 950;
 export interface KungFooState {
   handPositions: ({ x: number; y: number } | null)[];
   motionDetector?: MotionDetector;
-  btnBack?: DwellButton;
   ninjas: Ninja[];
   waveManager?: WaveManager;
   currentWaveConfig?: WaveConfig;

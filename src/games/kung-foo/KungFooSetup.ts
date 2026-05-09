@@ -19,7 +19,6 @@ function buildDifficultyHeader(scene: Phaser.Scene, state: KungFooState, width: 
     state.difficultyUiElements.push(obj);
     return obj;
   };
-  addToUi(scene.add.rectangle(width / 2, 0, width, 56, HEX.bgCanvas, 0.85).setOrigin(0.5, 0).setDepth(DEPTH.hud - 1));
   addToUi(scene.add.text(width / 2, height * 0.18, "KUNG FOO", {
     fontSize: "52px", fontFamily: FONT.display, fontStyle: "900", color: COLOR.danger,
     shadow: { offsetX: 0, offsetY: 0, color: COLOR.danger, blur: 20, fill: true },
@@ -66,11 +65,6 @@ export function applyDifficultyState(state: KungFooState, difficulty: Difficulty
 }
 
 export function buildGameplayUi(scene: Phaser.Scene, state: KungFooState, width: number, height: number): void {
-  state.btnBack = new DwellButton(scene, 100, height * 0.12, {
-    label: "← MENU", fontSize: "20px",
-    onActivate: () => scene.scene.start("MenuScene", { selectedGameKey: scene.sys.settings.key }),
-    depth: DEPTH.hud, dwellMs: 1000, fillColor: HEX.nightBlue,
-  });
   state.livesBadge = createLivesBadge(scene, width - 100, height * 0.06, MAX_LIVES);
   state.livesBadge.container.setDepth(DEPTH.hud);
   buildPlatforms(scene, width, height);

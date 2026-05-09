@@ -29,11 +29,13 @@ export class KungFooScene extends Phaser.Scene {
       await handTracker.initDetector({ numHands: 2 });
       handTracker.start({ targetFps: KF_HAND_TRACKER_FPS });
       handTracker.on("landmarks", this.onLandmarks, this);
+      this.input.keyboard?.on("keydown-Q", this.onQuitToMenu);
 
       this.state.motionDetector = new MotionDetector(videoEl, width, height, this.onMotionClusters);
 
       this.events.once("shutdown", () => {
         handTracker.off("landmarks", this.onLandmarks, this);
+        this.input.keyboard?.off("keydown-Q", this.onQuitToMenu);
         this.state.motionDetector?.destroy();
         endGame(this, this.state);
       });
@@ -51,16 +53,7 @@ export class KungFooScene extends Phaser.Scene {
       return;
     }
 
-    if (!data?.difficulty) {
-      showDifficultySelector(this, {
-        state: this.state,
-        width,
-        height,
-        onPick: (difficulty) => this.initDifficulty(difficulty, width, height),
-      });
-    } else {
-      this.initDifficulty(data.difficulty, width, height);
-    }
+    this.startDifficultyFlow(data?.difficulty, width, height);
   }
 
   private initDifficulty(difficulty: Difficulty, width: number, height: number): void {
@@ -69,6 +62,19 @@ export class KungFooScene extends Phaser.Scene {
     initWaveManager(this.state, difficulty);
     buildGameplayUi(this, this.state, width, height);
     runCountdown(this, () => startGame(this, this.state));
+  }
+
+  private startDifficultyFlow(initialDifficulty: Difficulty | undefined, width: number, height: number): void {
+    if (initialDifficulty) {
+      this.initDifficulty(initialDifficulty, width, height);
+      return;
+    }
+    showDifficultySelector(this, {
+      state: this.state,
+      width,
+      height,
+      onPick: (difficulty) => this.initDifficulty(difficulty, width, height),
+    });
   }
 
   private onMotionClusters = (clusters: MotionCluster[]): void => {
@@ -93,13 +99,15 @@ export class KungFooScene extends Phaser.Scene {
     this.webcam.render(time, KF_WEBCAM_FPS);
 
     if (!this.state.gameActive) {
-      this.state.btnBack?.update(this.state.handPositions, delta);
       this.state.difficultyButtons.forEach((diffBtn) => diffBtn.update(this.state.handPositions, delta));
       return;
     }
 
     advanceGame(this, this.state, delta);
     tickTimer(this, this.state);
-    this.state.btnBack?.update(this.state.handPositions, delta);
   }
+
+  private readonly onQuitToMenu = (): void => {
+    this.scene.start("MenuScene", { selectedGameKey: this.sys.settings.key });
+  };
 }
