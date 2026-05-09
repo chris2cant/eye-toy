@@ -26,7 +26,7 @@ export function computeCardLayout(
     x:      active ? cx : cx + offset * sideOffX,
     y:      active ? cy : cy + 30,
     cardW:  active ? activeW : sideW,
-    cardH:  active ? 340 : 240,
+    cardH:  active ? 420 : 260,
     scale:  active ? 1 : 0.80,
     alpha:  1,
     active,

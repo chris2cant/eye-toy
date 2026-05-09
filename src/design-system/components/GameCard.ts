@@ -40,8 +40,8 @@ function createCardElements(scene: Phaser.Scene, config: GameCardConfig): CardEl
     tagText: scene.add.text(0, 0, "", { fontSize: "11px", fontFamily: FONT.ui }).setOrigin(0.5).setVisible(false),
     iconText: scene.add.text(0, 0, config.icon, { fontSize: "40px", fontFamily: FONT.display, color: COLOR.white }).setOrigin(0.5),
     titleText: scene.add.text(0, 0, config.name.toUpperCase(), {
-      fontSize: "19px", fontFamily: FONT.display, color: COLOR.nightBlue,
-      align: "center", wordWrap: { width: 230 },
+      fontSize: "22px", fontFamily: FONT.display, color: COLOR.nightBlue,
+      align: "center", wordWrap: { width: 256 },
     }).setOrigin(0.5),
     descText: scene.add.text(0, 0, config.desc, {
       fontSize: "12px", fontFamily: FONT.ui, color: COLOR.textSecondary,
@@ -117,7 +117,7 @@ function drawActiveCard(el: CardElements, config: GameCardConfig, dim: CardDimen
   const halfH = cardH / 2;
   const cornerR = 24;
   const iconRadius = 66;
-  const iconY = -halfH + 96;
+  const iconY = -halfH + 126;
 
   drawBackground(el.gfx, halfW, halfH, cornerR);
   drawWave(el.gfx, { halfW, halfH, accentHex: config.accentHex, cornerR });
@@ -130,7 +130,7 @@ function drawActiveCard(el: CardElements, config: GameCardConfig, dim: CardDimen
   const waveTop = computeWaveTop(halfH);
   const descY = Math.min(titleY + 34, waveTop - 28);
 
-  el.titleText.setPosition(0, titleY).setFontSize("19px").setAlpha(1).setColor(COLOR.nightBlue).setVisible(true);
+  el.titleText.setPosition(0, titleY).setFontSize("22px").setAlpha(1).setColor(COLOR.nightBlue).setVisible(true);
   el.descText.setPosition(0, descY).setAlpha(1).setColor(COLOR.textSecondary).setVisible(true);
 }
 
@@ -168,7 +168,7 @@ export function createGameCard(scene: Phaser.Scene, config: GameCardConfig): Gam
     }
   }
 
-  redraw(320, 340, true);
+  redraw(320, 420, true);
 
   return {
     container,

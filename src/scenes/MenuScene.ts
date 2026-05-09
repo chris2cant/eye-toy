@@ -107,7 +107,7 @@ export class MenuScene extends Phaser.Scene {
     this.dotArcs = [];
     const spacing = 26;
     const startX = cx - ((GAMES.length - 1) * spacing) / 2;
-    const dotsY = Math.min(height * 0.97, height * 0.67 + 200);
+    const dotsY = Math.min(height * 0.97, height * 0.67 + 230);
     for (let index = 0; index < GAMES.length; index++) {
       const arc = this.add.circle(startX + index * spacing, dotsY, 4, HEX.textMuted, 0.35).setDepth(DEPTH.hud);
       this.dotArcs.push(arc);
