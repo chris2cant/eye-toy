@@ -63,7 +63,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private buildPlayButton(height: number, cx: number) {
-    const btnY = height * 0.27;
+    const btnY = height * 0.24;
     this.btnSelect = new DwellButton(this, cx, btnY, {
       label: "▶  JOUER  →",
       fontSize: "34px",
@@ -78,7 +78,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   private buildNavArrows(width: number, height: number) {
-    const arrowY = height * 0.585;
+    const arrowY = height * 0.67;
     this.btnPrev = new NavArrow(this, width * 0.052, arrowY, {
       direction: "left",
       onActivate: () => { this.navigate(-1); this.btnPrev.reset(); },
@@ -98,7 +98,7 @@ export class MenuScene extends Phaser.Scene {
         name: game.name, desc: game.desc, tag: game.tag,
         icon: game.icon, accentHex: game.accentHex, accentCss: game.accentCss,
       });
-      card.container.setDepth(DEPTH.hud).setPosition(0, height * 0.585);
+      card.container.setDepth(DEPTH.hud).setPosition(0, height * 0.67);
       return card;
     });
   }
@@ -107,8 +107,9 @@ export class MenuScene extends Phaser.Scene {
     this.dotArcs = [];
     const spacing = 26;
     const startX = cx - ((GAMES.length - 1) * spacing) / 2;
+    const dotsY = Math.min(height * 0.97, height * 0.67 + 200);
     for (let index = 0; index < GAMES.length; index++) {
-      const arc = this.add.circle(startX + index * spacing, height * 0.78, 4, HEX.textMuted, 0.35).setDepth(DEPTH.hud);
+      const arc = this.add.circle(startX + index * spacing, dotsY, 4, HEX.textMuted, 0.35).setDepth(DEPTH.hud);
       this.dotArcs.push(arc);
     }
   }
@@ -116,12 +117,12 @@ export class MenuScene extends Phaser.Scene {
   private updateCard() {
     const { width, height } = this.scale;
     const cx = width / 2;
-    const cy = height * 0.585;
+    const cy = height * 0.67;
     const carousel: CarouselConfig = {
       cx, cy,
-      activeW: Math.min(420, Math.max(320, width * 0.30)),
-      sideW: Math.min(270, Math.max(190, width * 0.18)),
-      sideOffX: Math.min(380, Math.max(270, width * 0.24)),
+      activeW: Math.min(340, Math.max(280, width * 0.26)),
+      sideW: Math.min(260, Math.max(200, width * 0.18)),
+      sideOffX: Math.min(400, Math.max(310, width * 0.28)),
     };
     this.carouselCards.forEach((card, index) => {
       const layout = computeCardLayout(index, this.currentIndex, GAMES.length, carousel);

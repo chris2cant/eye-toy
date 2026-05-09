@@ -22,159 +22,153 @@ export interface GameCardHandle {
   destroy(): void;
 }
 
-interface CardDimensions {
-  cardW: number;
-  cardH: number;
-  alpha: number;
-}
+interface CardDimensions { cardW: number; cardH: number; }
 
 interface CardElements {
   gfx: Phaser.GameObjects.Graphics;
-  tagBg: Phaser.GameObjects.Graphics;
-  activeBadgeBg: Phaser.GameObjects.Graphics;
   tagText: Phaser.GameObjects.Text;
   iconText: Phaser.GameObjects.Text;
   titleText: Phaser.GameObjects.Text;
   descText: Phaser.GameObjects.Text;
+  activeBadgeBg: Phaser.GameObjects.Graphics;
   activeBadgeText: Phaser.GameObjects.Text;
 }
 
 function createCardElements(scene: Phaser.Scene, config: GameCardConfig): CardElements {
   return {
     gfx: scene.add.graphics(),
-    tagBg: scene.add.graphics(),
+    tagText: scene.add.text(0, 0, "", { fontSize: "11px", fontFamily: FONT.ui }).setOrigin(0.5).setVisible(false),
+    iconText: scene.add.text(0, 0, config.icon, { fontSize: "40px", fontFamily: FONT.display, color: COLOR.white }).setOrigin(0.5),
+    titleText: scene.add.text(0, 0, config.name.toUpperCase(), {
+      fontSize: "19px", fontFamily: FONT.display, color: COLOR.nightBlue,
+      align: "center", wordWrap: { width: 230 },
+    }).setOrigin(0.5),
+    descText: scene.add.text(0, 0, config.desc, {
+      fontSize: "12px", fontFamily: FONT.ui, color: COLOR.textSecondary,
+      align: "center", lineSpacing: 3, wordWrap: { width: 220 },
+    }).setOrigin(0.5),
     activeBadgeBg: scene.add.graphics(),
-    tagText: scene.add.text(0, 0, config.tag, { fontSize: "11px", fontFamily: FONT.ui, color: COLOR.white }).setOrigin(0.5),
-    iconText: scene.add.text(0, 0, config.icon, { fontSize: "22px", fontFamily: FONT.display, color: config.accentCss }).setOrigin(0.5),
-    titleText: scene.add.text(0, 0, config.name.toUpperCase(), { fontSize: "22px", fontFamily: FONT.display, color: COLOR.nightBlue, align: "center" }).setOrigin(0.5),
-    descText: scene.add.text(0, 0, config.desc, { fontSize: "13px", fontFamily: FONT.ui, color: COLOR.textSecondary, align: "center", lineSpacing: 4, wordWrap: { width: 300 } }).setOrigin(0.5),
-    activeBadgeText: scene.add.text(0, 0, "ACTIF", { fontSize: "10px", fontFamily: FONT.ui, color: COLOR.white }).setOrigin(0.5).setVisible(false),
+    activeBadgeText: scene.add.text(0, 0, "", { fontSize: "10px", fontFamily: FONT.ui }).setOrigin(0.5).setVisible(false),
   };
 }
 
+// Une période complète de sinusoïde (crete + creux) → vraie vague, pas un arc
+function traceWavePath(gfx: Phaser.GameObjects.Graphics, halfW: number, baseY: number, amplitude: number): void {
+  for (let step = 0; step <= 60; step++) {
+    const ratio = step / 60;
+    gfx.lineTo(-halfW + ratio * halfW * 2, baseY - amplitude * Math.sin(ratio * Math.PI * 2));
+  }
+}
+
+type WaveParams = { halfW: number; halfH: number; accentHex: number; cornerR: number };
+
+function drawWave(gfx: Phaser.GameObjects.Graphics, { halfW, halfH, accentHex, cornerR }: WaveParams): void {
+  // baseY à 73% de halfH → vague bien en bas (~27% du bas de la carte)
+  const amplitude = Math.round(halfH * 0.09);
+  const baseY = Math.round(halfH * 0.73);
+  // sectionTop inclut une marge de sécurité au-dessus du pic de vague
+  const sectionTop = baseY - amplitude - 10;
+
+  gfx.fillStyle(accentHex, 1);
+  gfx.fillRoundedRect(-halfW, sectionTop, halfW * 2, halfH - sectionTop, { tl: 0, tr: 0, bl: cornerR, br: cornerR });
+
+  // Capuchon blanc qui "découpe" la vague dans la section accent
+  gfx.fillStyle(HEX.white, 1);
+  gfx.beginPath();
+  gfx.moveTo(-halfW, sectionTop);
+  gfx.lineTo(-halfW, baseY);
+  traceWavePath(gfx, halfW, baseY, amplitude);
+  gfx.lineTo(halfW, sectionTop);
+  gfx.closePath();
+  gfx.fillPath();
+}
+
+function drawBackground(gfx: Phaser.GameObjects.Graphics, halfW: number, halfH: number, cornerR: number): void {
+  gfx.fillStyle(0x000000, 0.08);
+  gfx.fillRoundedRect(-halfW + 4, -halfH + 7, halfW * 2, halfH * 2, cornerR);
+  gfx.fillStyle(HEX.white, 1);
+  gfx.fillRoundedRect(-halfW, -halfH, halfW * 2, halfH * 2, cornerR);
+}
+
+function drawIconCircle(gfx: Phaser.GameObjects.Graphics, iconY: number, radius: number, accentHex: number): void {
+  gfx.fillStyle(accentHex, 1);
+  gfx.fillCircle(0, iconY, radius);
+  gfx.fillStyle(HEX.white, 0.20);
+  gfx.fillCircle(0, iconY - radius * 0.22, radius * 0.58);
+}
+
+function drawDecorations(gfx: Phaser.GameObjects.Graphics, halfW: number, halfH: number, accentHex: number): void {
+  gfx.fillStyle(accentHex, 0.25);
+  gfx.fillCircle(halfW * 0.72, -halfH * 0.65, 8);
+  gfx.fillCircle(-halfW * 0.66, -halfH * 0.52, 5);
+  gfx.fillStyle(HEX.sunYellow, 0.55);
+  gfx.fillCircle(halfW * 0.58, -halfH * 0.44, 4);
+}
+
+function computeWaveTop(halfH: number): number {
+  const amplitude = Math.round(halfH * 0.09);
+  const baseY = Math.round(halfH * 0.73);
+  return baseY - amplitude - 10;
+}
+
 function drawActiveCard(el: CardElements, config: GameCardConfig, dim: CardDimensions): void {
-  const { cardW, cardH, alpha } = dim;
+  const { cardW, cardH } = dim;
   const halfW = cardW / 2;
   const halfH = cardH / 2;
   const cornerR = 24;
-  const iconCircleR = 38;
-  const iconY = -halfH * 0.30;
+  const iconRadius = 66;
+  const iconY = -halfH + 96;
 
-  el.gfx.fillStyle(0x000000, 0.14 * alpha);
-  el.gfx.fillRoundedRect(-halfW + 5, -halfH + 8, cardW, cardH, cornerR);
-  el.gfx.fillStyle(config.accentHex, alpha);
-  el.gfx.fillRoundedRect(-halfW, -halfH, cardW, cardH, cornerR);
-  el.gfx.fillStyle(0xffffff, 0.20 * alpha);
-  el.gfx.fillRoundedRect(-halfW, -halfH, cardW, cardH * 0.42, { tl: cornerR, tr: cornerR, bl: 0, br: 0 });
-  el.gfx.fillStyle(0x000000, 0.07 * alpha);
-  el.gfx.fillRoundedRect(-halfW, halfH * 0.42, cardW, halfH * 0.58, { tl: 0, tr: 0, bl: cornerR, br: cornerR });
+  drawBackground(el.gfx, halfW, halfH, cornerR);
+  drawWave(el.gfx, { halfW, halfH, accentHex: config.accentHex, cornerR });
+  drawIconCircle(el.gfx, iconY, iconRadius, config.accentHex);
+  drawDecorations(el.gfx, halfW, halfH, config.accentHex);
 
-  const bubbles: { x: number; y: number; radius: number; color: number }[] = [
-    { x: halfW * 0.78, y: -halfH * 0.30, radius: 22, color: HEX.sunYellow  },
-    { x: -halfW * 0.80, y: halfH * 0.28, radius: 18, color: HEX.punchyPink },
-    { x: halfW * 0.75, y: halfH * 0.58, radius: 20, color: HEX.popPurple  },
-  ];
-  bubbles.forEach(({ x, y, radius, color }) => {
-    el.gfx.fillStyle(color, 0.82 * alpha);
-    el.gfx.fillCircle(x, y, radius);
-  });
+  el.iconText.setPosition(0, iconY).setFontSize("40px").setAlpha(1);
 
-  el.gfx.fillStyle(HEX.white, 0.95 * alpha);
-  el.gfx.fillCircle(0, iconY, iconCircleR);
-  el.iconText.setPosition(0, iconY).setFontSize("24px").setAlpha(alpha).setColor(COLOR.nightBlue);
+  const titleY = iconY + iconRadius + 26;
+  const waveTop = computeWaveTop(halfH);
+  const descY = Math.min(titleY + 34, waveTop - 28);
 
-  drawActiveTagPill(el, -halfW, -halfH, alpha);
-
-  const titleY = iconY + iconCircleR + 22;
-  el.titleText.setPosition(0, titleY).setFontSize("22px").setAlpha(alpha).setColor(COLOR.white);
-  el.descText.setPosition(0, titleY + 38).setVisible(true).setAlpha(0.88 * alpha).setColor(COLOR.white);
-
-  drawActiveBadge(el, halfW, -halfH, alpha);
-}
-
-function drawActiveTagPill(el: CardElements, leftEdge: number, topEdge: number, alpha: number): void {
-  el.tagText.setFontSize("11px");
-  const tagPadX = 10;
-  const tagPadY = 5;
-  const tagW = el.tagText.width + tagPadX * 2;
-  const tagH = Math.max(el.tagText.height + tagPadY * 2 - 4, 20);
-  const tagX = leftEdge + tagW / 2 + 12;
-  const tagYPos = topEdge + tagH / 2 + 14;
-  el.tagBg.fillStyle(0xffffff, 0.22 * alpha);
-  el.tagBg.fillRoundedRect(tagX - tagW / 2, tagYPos - tagH / 2, tagW, tagH, tagH / 2);
-  el.tagText.setPosition(tagX, tagYPos).setAlpha(alpha).setColor(COLOR.white);
-}
-
-function drawActiveBadge(el: CardElements, rightEdge: number, topEdge: number, alpha: number): void {
-  const badgeW = 78;
-  const badgeH = 24;
-  const badgeX = rightEdge - badgeW / 2 - 12;
-  const badgeY = topEdge + badgeH / 2 + 14;
-  el.activeBadgeBg.fillStyle(0xffffff, 0.22 * alpha);
-  el.activeBadgeBg.fillRoundedRect(badgeX - badgeW / 2, badgeY - badgeH / 2, badgeW, badgeH, 12);
-  el.activeBadgeBg.fillStyle(0x22c55e, alpha);
-  el.activeBadgeBg.fillCircle(badgeX - badgeW / 2 + 10, badgeY, 4);
-  el.activeBadgeText.setPosition(badgeX + 4, badgeY).setAlpha(1).setVisible(true).setColor(COLOR.white).setFontSize("10px").setText("ACTIF");
+  el.titleText.setPosition(0, titleY).setFontSize("19px").setAlpha(1).setColor(COLOR.nightBlue).setVisible(true);
+  el.descText.setPosition(0, descY).setAlpha(1).setColor(COLOR.textSecondary).setVisible(true);
 }
 
 function drawInactiveCard(el: CardElements, config: GameCardConfig, dim: CardDimensions): void {
-  const { cardW, cardH, alpha } = dim;
+  const { cardW, cardH } = dim;
   const halfW = cardW / 2;
   const halfH = cardH / 2;
   const cornerR = 16;
-  const iconCircleR = 24;
-  const iconY = -halfH + 42;
-  const accentBarH = 8;
+  const iconRadius = 36;
+  const iconY = -halfH + 62;
 
-  el.gfx.fillStyle(0x000000, 0.07 * alpha);
-  el.gfx.fillRoundedRect(-halfW + 4, -halfH + 6, cardW, cardH, cornerR);
-  el.gfx.fillStyle(HEX.white, alpha);
-  el.gfx.fillRoundedRect(-halfW, -halfH, cardW, cardH, cornerR);
-  el.gfx.fillStyle(config.accentHex, alpha);
-  el.gfx.fillRoundedRect(-halfW, -halfH, cardW, accentBarH, { tl: cornerR, tr: cornerR, bl: 0, br: 0 });
+  drawBackground(el.gfx, halfW, halfH, cornerR);
+  drawWave(el.gfx, { halfW, halfH, accentHex: config.accentHex, cornerR });
+  drawIconCircle(el.gfx, iconY, iconRadius, config.accentHex);
 
-  el.gfx.fillStyle(config.accentHex, 0.12 * alpha);
-  el.gfx.fillCircle(0, iconY, iconCircleR);
-  el.gfx.lineStyle(2, config.accentHex, 0.4 * alpha);
-  el.gfx.strokeCircle(0, iconY, iconCircleR);
-  el.iconText.setPosition(0, iconY).setFontSize("14px").setAlpha(alpha).setColor(config.accentCss);
-
-  el.tagText.setFontSize("9px");
-  const tagPadX = 10;
-  const tagPadY = 5;
-  const tagW = el.tagText.width + tagPadX * 2;
-  const tagH = Math.max(el.tagText.height + tagPadY * 2 - 4, 18);
-  const tagX = -halfW + tagW / 2 + 10;
-  const tagYPos = -halfH + accentBarH + tagH / 2 + 8;
-  el.tagBg.fillStyle(config.accentHex, alpha);
-  el.tagBg.fillRoundedRect(tagX - tagW / 2, tagYPos - tagH / 2, tagW, tagH, tagH / 2);
-  el.tagText.setPosition(tagX, tagYPos).setAlpha(alpha).setColor(COLOR.white);
-
-  const titleY = iconY + iconCircleR + 16;
-  el.titleText.setPosition(0, titleY).setFontSize("14px").setAlpha(alpha).setColor(COLOR.nightBlue);
-  el.descText.setPosition(0, titleY + 20).setVisible(false).setAlpha(alpha).setColor(COLOR.textSecondary);
-  el.activeBadgeText.setVisible(false);
+  el.iconText.setPosition(0, iconY).setFontSize("24px").setAlpha(1);
+  const titleY = iconY + iconRadius + 16;
+  el.titleText.setPosition(0, titleY).setFontSize("14px").setAlpha(1).setColor(COLOR.nightBlue).setVisible(true);
+  el.descText.setVisible(false);
 }
 
 export function createGameCard(scene: Phaser.Scene, config: GameCardConfig): GameCardHandle {
   const container = scene.add.container(0, 0);
   const el = createCardElements(scene, config);
 
-  container.add([el.gfx, el.tagBg, el.activeBadgeBg, el.tagText, el.iconText, el.titleText, el.descText, el.activeBadgeText]);
+  container.add([el.gfx, el.activeBadgeBg, el.tagText, el.iconText, el.titleText, el.descText, el.activeBadgeText]);
 
-  function redraw(cardW: number, cardH: number, active: boolean, alpha = 1) {
+  function redraw(cardW: number, cardH: number, active: boolean, _alpha = 1): void {
     el.gfx.clear();
-    el.tagBg.clear();
     el.activeBadgeBg.clear();
-    const dim: CardDimensions = { cardW, cardH, alpha };
     if (active) {
-      drawActiveCard(el, config, dim);
+      drawActiveCard(el, config, { cardW, cardH });
     } else {
-      drawInactiveCard(el, config, dim);
+      drawInactiveCard(el, config, { cardW, cardH });
     }
   }
 
-  redraw(360, 220, true);
+  redraw(320, 340, true);
 
   return {
     container,

@@ -17,7 +17,13 @@ export class BootScene extends Phaser.Scene {
   }
 
   async create() {
-    await document.fonts.ready;
+    await Promise.all([
+      document.fonts.load('600 1em Fredoka'),
+      document.fonts.load('700 1em Fredoka'),
+      document.fonts.load('600 1em "Nunito Sans"'),
+      document.fonts.load('700 1em "Nunito Sans"'),
+      document.fonts.load('800 1em "Nunito Sans"'),
+    ]);
     const params = new URLSearchParams(window.location.search);
     if (params.has("ds")) {
       this.scene.start("DesignSystemScene");
