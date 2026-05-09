@@ -1,18 +1,21 @@
 import Phaser from "phaser";
 import { handTracker } from "../../camera/HandTracker";
 import type { LandmarksPayload } from "../../camera/HandTracker";
-import { COLOR, DEPTH, FONT, HEX } from "../../design-system/tokens";
 import { DwellButton } from "../../design-system/DwellButton";
+import { COLOR, DEPTH, FONT } from "../../design-system/tokens";
 import { WebcamLayer } from "../../scenes/WebcamLayer";
-import { PALETTE, redrawToolHud, drawHandCursors, buildPaletteButtons, applyActiveStrokes, mapLandmark, getPinchDrawPosition, smoothPoint } from "./PaintSceneHUD";
-import type { Tool, PaintColor } from "./PaintSceneHUD";
+import { PALETTE, redrawToolHud, drawHandCursors, applyActiveStrokes, mapLandmark, getPinchDrawPosition, smoothPoint } from "./PaintSceneHUD";
+import type { Tool, PaintColor, PaintToolButton } from "./PaintSceneHUD";
+import { buildPaintUi } from "./PaintSceneUI";
 
 const THUMB_TIP = 4;
 const INDEX_TIP = 8;
 const PALM_LANDMARK = 9;
 const PAINT_TRACKER_FPS = 24;
 const PAINT_WEBCAM_FPS = 24;
-const BRUSH_SIZE = 18;
+const DEFAULT_BRUSH_SIZE = 28;
+const BRUSH_SIZE_STEP = 8;
+const BRUSH_SIZE_MIN = 12;
 const ERASER_SIZE = 42;
 
 type Point = { x: number; y: number };
@@ -23,9 +26,8 @@ export class PaintScene extends Phaser.Scene {
   private paintImage: Phaser.GameObjects.Image | null = null;
   private cursorGraphics!: Phaser.GameObjects.Graphics;
   private hudGraphics!: Phaser.GameObjects.Graphics;
-  private btnBack!: DwellButton;
   private btnClear!: DwellButton;
-  private toolButtons: DwellButton[] = [];
+  private toolButtons: PaintToolButton[] = [];
   private handPositions: (Point | null)[] = [null, null];
   private indexPositions: (Point | null)[] = [null, null];
   private smoothedDrawPositions: (Point | null)[] = [null, null];
@@ -33,6 +35,7 @@ export class PaintScene extends Phaser.Scene {
   private drawingHands = new Set<number>();
   private activeTool: Tool = "brush";
   private activeColor: PaintColor = PALETTE[2];
+  private brushSize = DEFAULT_BRUSH_SIZE;
 
   constructor() {
     super({ key: "PaintScene" });
@@ -40,6 +43,10 @@ export class PaintScene extends Phaser.Scene {
 
   async create(): Promise<void> {
     const { width, height } = this.scale;
+
+    this.input.keyboard?.on("keydown-UP", this.onIncreaseBrush);
+    this.input.keyboard?.on("keydown-DOWN", this.onDecreaseBrush);
+    this.input.keyboard?.on("keydown-Q", this.onQuitToMenu);
 
     try {
       const videoEl = await handTracker.initCamera();
@@ -57,6 +64,9 @@ export class PaintScene extends Phaser.Scene {
       this.events.once("shutdown", () => {
         handTracker.off("landmarks", this.onLandmarks, this);
         this.scale.off("resize", this.onResize, this);
+        this.input.keyboard?.off("keydown-UP", this.onIncreaseBrush);
+        this.input.keyboard?.off("keydown-DOWN", this.onDecreaseBrush);
+        this.input.keyboard?.off("keydown-Q", this.onQuitToMenu);
       });
     } catch (err) {
       console.error("[PaintScene] erreur d'initialisation:", err);
@@ -82,62 +92,33 @@ export class PaintScene extends Phaser.Scene {
   }
 
   private buildUI(width: number, height: number): void {
-    this.add
-      .rectangle(width / 2, 0, width, height * 0.34, HEX.bgCanvas, 0.42)
-      .setOrigin(0.5, 0)
-      .setDepth(DEPTH.hud - 2);
-
-    this.hudGraphics = this.add.graphics().setDepth(DEPTH.hud - 1);
-    this.cursorGraphics = this.add.graphics().setDepth(DEPTH.cursor);
-
-    this.btnBack = new DwellButton(this, 100, height * 0.12, {
-      label: "← MENU",
-      fontSize: "20px",
-      onActivate: () => this.scene.start("MenuScene", { selectedGameKey: this.sys.settings.key }),
-      depth: DEPTH.hud,
-      dwellMs: 1000,
-      fillColor: HEX.nightBlue,
-    });
-
-    this.btnClear = new DwellButton(this, width - 112, height * 0.12, {
-      label: "EFFACER",
-      fontSize: "18px",
-      onActivate: () => {
+    const ui = buildPaintUi({
+      scene: this,
+      width,
+      height,
+      activeColor: this.activeColor,
+      onClear: () => {
         this.clearCanvas();
         this.btnClear.reset();
       },
-      depth: DEPTH.hud,
-      dwellMs: 1000,
+      onToolChange: (tool, color) => {
+        this.activeTool = tool;
+        if (color) this.activeColor = color;
+        this.redrawToolHud();
+      },
     });
-
-    this.add
-      .text(width / 2, height * 0.08, "PAINT", {
-        fontSize: "34px",
-        fontFamily: FONT.display,
-        fontStyle: "900",
-        color: COLOR.textPrimary,
-        shadow: { offsetX: 0, offsetY: 0, color: this.activeColor.color, blur: 16, fill: true },
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH.hud);
-
-    this.buildPalette(width, height);
+    this.hudGraphics = ui.hudGraphics;
+    this.cursorGraphics = ui.cursorGraphics;
+    this.btnClear = ui.btnClear;
+    this.toolButtons = ui.toolButtons;
     this.redrawToolHud();
-  }
-
-  private buildPalette(width: number, height: number): void {
-    this.toolButtons = buildPaletteButtons({ scene: this, width, height }, (tool, color) => {
-      this.activeTool = tool;
-      if (color) this.activeColor = color;
-      this.redrawToolHud();
-    });
   }
 
   private redrawToolHud(): void {
     const { width, height } = this.scale;
     redrawToolHud(
       { gfx: this.hudGraphics, scene: this, width, height, toolButtons: this.toolButtons },
-      { activeTool: this.activeTool, activeColor: this.activeColor },
+      { activeTool: this.activeTool, activeColor: this.activeColor, brushSize: this.brushSize },
     );
   }
 
@@ -179,9 +160,8 @@ export class PaintScene extends Phaser.Scene {
 
     this.drawActiveStrokes();
     this.drawCursors();
-    this.btnBack.update(this.handPositions, delta);
     this.btnClear.update(this.handPositions, delta);
-    this.toolButtons.forEach((button) => button.update(this.handPositions, delta));
+    this.toolButtons.forEach(({ button }) => button.update(this.handPositions, delta));
   }
 
   private drawActiveStrokes(): void {
@@ -192,7 +172,7 @@ export class PaintScene extends Phaser.Scene {
       drawing: this.drawingHands,
       tool: this.activeTool,
       color: this.activeColor,
-      brushSize: BRUSH_SIZE,
+      brushSize: this.brushSize,
       eraserSize: ERASER_SIZE,
     });
   }
@@ -203,10 +183,29 @@ export class PaintScene extends Phaser.Scene {
       drawingHands: this.drawingHands,
       tool: this.activeTool,
       color: this.activeColor,
-      brushSize: BRUSH_SIZE,
+      brushSize: this.brushSize,
       eraserSize: ERASER_SIZE,
     });
   }
+
+  private setBrushSize(nextSize: number): void {
+    const clamped = Math.max(BRUSH_SIZE_MIN, nextSize);
+    if (clamped === this.brushSize) return;
+    this.brushSize = clamped;
+    this.redrawToolHud();
+  }
+
+  private readonly onIncreaseBrush = (): void => {
+    this.setBrushSize(this.brushSize + BRUSH_SIZE_STEP);
+  };
+
+  private readonly onDecreaseBrush = (): void => {
+    this.setBrushSize(this.brushSize - BRUSH_SIZE_STEP);
+  };
+
+  private readonly onQuitToMenu = (): void => {
+    this.scene.start("MenuScene", { selectedGameKey: this.sys.settings.key });
+  };
 
   private clearCanvas(): void {
     if (!this.paintTexture) return;

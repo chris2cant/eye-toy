@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import { COLOR, HEX, FONT, DEPTH } from "../../design-system/tokens";
-import { DwellButton } from "../../design-system/DwellButton";
+import { createPaintColor } from "../../design-system/components/PaintColor";
+import type { PaintColorHandle } from "../../design-system/components/PaintColor";
 import type { HandLandmark } from "../../camera/HandTracker";
 
 type Point = { x: number; y: number };
@@ -28,7 +29,8 @@ export function smoothPoint(previous: Point | null, next: Point): Point {
 }
 
 export type Tool = "brush" | "eraser";
-export type PaintColor = { label: string; color: string; hex: number };
+export type PaintColor = { label: string; color: string; hex: number; dynamic?: "rainbow" };
+export type PaintToolButton = { button: PaintColorHandle; tool: Tool; color: PaintColor | null };
 
 export const PALETTE: PaintColor[] = [
   { label: "NOIR",   color: "#111827", hex: 0x111827 },
@@ -38,24 +40,32 @@ export const PALETTE: PaintColor[] = [
   { label: "BLEU",   color: "#36A3FF", hex: 0x36a3ff },
   { label: "VERT",   color: "#2FFFAA", hex: HEX.success },
   { label: "VIOLET", color: "#A78BFA", hex: 0xa78bfa },
+  { label: "MULTI",  color: "#FF3B5C", hex: 0xff3b5c, dynamic: "rainbow" },
 ];
 
-export interface ToolHudState { activeTool: Tool; activeColor: PaintColor; }
-export interface ToolHudContext { gfx: Phaser.GameObjects.Graphics; scene: Phaser.Scene; width: number; height: number; toolButtons: Phaser.GameObjects.GameObject[]; }
+export interface ToolHudState { activeTool: Tool; activeColor: PaintColor; brushSize: number; }
+export interface ToolHudContext { gfx: Phaser.GameObjects.Graphics; scene: Phaser.Scene; width: number; height: number; toolButtons: PaintToolButton[]; }
 
 export function redrawToolHud(ctx: ToolHudContext, state: ToolHudState): void {
   const { gfx, scene, width, height, toolButtons } = ctx;
   gfx.clear();
-  const hexColor = state.activeTool === "eraser" ? HEX.textPrimary : state.activeColor.hex;
-  gfx.lineStyle(2, hexColor, 0.95);
-  gfx.strokeRect(width / 2 - 92, height * 0.135, 184, 34);
-  gfx.fillStyle(HEX.bgElevated, 0.72);
-  gfx.fillRect(width / 2 - 92, height * 0.135, 184, 34);
-  gfx.fillStyle(hexColor, 1);
-  gfx.fillCircle(width / 2 - 68, height * 0.135 + 17, state.activeTool === "eraser" ? 10 : 8);
-  addActiveLabel(scene, state.activeTool === "eraser" ? "GOMME" : state.activeColor.label, width / 2 - 46, height * 0.135 + 17);
-  drawPaletteIndicators(gfx, state, height, toolButtons);
-  drawEraserIndicator(gfx, state, height, toolButtons);
+  syncPaletteState(toolButtons, state);
+  const chipX = width / 2;
+  const chipY = height * 0.11;
+  const chipColor = state.activeTool === "eraser" ? HEX.textPrimary : state.activeColor.hex;
+  gfx.fillStyle(HEX.white, 0.94);
+  gfx.fillRoundedRect(chipX - 108, chipY - 18, 216, 36, 18);
+  gfx.lineStyle(2, HEX.bgElevated, 0.9);
+  gfx.strokeRoundedRect(chipX - 108, chipY - 18, 216, 36, 18);
+  gfx.fillStyle(chipColor, 1);
+  gfx.fillCircle(chipX - 72, chipY, state.activeTool === "eraser" ? 10 : 9);
+  addActiveLabel(scene, getActiveLabel(state), chipX - 50, chipY);
+}
+
+function getActiveLabel(state: ToolHudState): string {
+  if (state.activeTool === "eraser") return "Gomme active";
+  if (state.activeColor.dynamic === "rainbow") return `Multicolore • ${state.brushSize}px`;
+  return `Couleur active • ${state.brushSize}px`;
 }
 
 function addActiveLabel(scene: Phaser.Scene, label: string, x: number, y: number): void {
@@ -65,30 +75,11 @@ function addActiveLabel(scene: Phaser.Scene, label: string, x: number, y: number
     .setName("paint-active-label").setOrigin(0, 0.5).setDepth(DEPTH.hud);
 }
 
-function drawPaletteIndicators(gfx: Phaser.GameObjects.Graphics, state: ToolHudState, height: number, toolButtons: Phaser.GameObjects.GameObject[]): void {
-  const paletteY = height * 0.25;
-  PALETTE.forEach((color, index) => {
-    const btn = toolButtons[index] as DwellButton;
-    if (!btn) return;
-    gfx.fillStyle(color.hex, 1);
-    gfx.fillRect(btn.x - 17, paletteY + 31, 34, 8);
-    if (state.activeTool === "brush" && color === state.activeColor) {
-      gfx.lineStyle(2, color.hex, 1);
-      gfx.strokeRect(btn.x - 23, paletteY + 25, 46, 20);
-    }
+function syncPaletteState(toolButtons: PaintToolButton[], state: ToolHudState): void {
+  toolButtons.forEach(({ button, tool, color }) => {
+    const isBrushActive = tool === "brush" && state.activeTool === "brush" && color === state.activeColor;
+    button.setActive(isBrushActive || (tool === "eraser" && state.activeTool === "eraser"));
   });
-}
-
-function drawEraserIndicator(gfx: Phaser.GameObjects.Graphics, state: ToolHudState, height: number, toolButtons: Phaser.GameObjects.GameObject[]): void {
-  const eraserBtn = toolButtons[PALETTE.length] as DwellButton;
-  if (!eraserBtn) return;
-  const paletteY = height * 0.25;
-  gfx.lineStyle(2, HEX.textPrimary, state.activeTool === "eraser" ? 1 : 0.38);
-  gfx.strokeRect(eraserBtn.x - 24, paletteY + 25, 48, 20);
-  gfx.lineStyle(3, HEX.danger, 0.9);
-  gfx.beginPath();
-  gfx.moveTo(eraserBtn.x - 13, paletteY + 38); gfx.lineTo(eraserBtn.x + 13, paletteY + 28);
-  gfx.strokePath();
 }
 
 export interface CursorSpec { positions: ({ x: number; y: number } | null)[]; drawingHands: Set<number>; tool: Tool; color: PaintColor; brushSize: number; eraserSize: number; }
@@ -117,23 +108,71 @@ export function drawHandCursors(gfx: Phaser.GameObjects.Graphics, spec: CursorSp
 export interface PaletteOpts { scene: Phaser.Scene; width: number; height: number; }
 export type OnToolChange = (tool: Tool, color: PaintColor | null) => void;
 
-export function buildPaletteButtons(opts: PaletteOpts, onToolChange: OnToolChange): DwellButton[] {
+export function buildPaletteButtons(opts: PaletteOpts, onToolChange: OnToolChange): PaintToolButton[] {
   const { scene, width, height } = opts;
-  const tools = [
-    ...PALETTE.map((color) => ({ label: color.label, color, tool: "brush" as const })),
-    { label: "GOMME", color: null as PaintColor | null, tool: "eraser" as const },
-  ];
-  const paletteY = height * 0.25;
-  const spacing = Math.min(118, Math.max(76, (width - 192) / Math.max(1, tools.length - 1)));
-  const startX = width / 2 - ((tools.length - 1) * spacing) / 2;
-  return tools.map((entry, index) => {
-    const btn = new DwellButton(scene, startX + index * spacing, paletteY, {
-      label: entry.label, fontSize: "14px",
-      onActivate: () => { onToolChange(entry.tool, entry.color); btn.reset(); },
-      depth: DEPTH.hud, dwellMs: 850, zonePad: 42,
-    });
-    return btn;
+  const layout = getPaletteLayout(width, height);
+  const paletteButtons = [...PALETTE.map((color) => ({ tool: "brush" as const, color })), { tool: "eraser" as const, color: null as PaintColor | null }];
+  const buttons: PaintToolButton[] = [];
+  paletteButtons.forEach((entry, index) => {
+    const x = layout.startX + index * layout.spacing;
+    const y = layout.startY;
+    buttons.push(createToolButton({
+      scene,
+      x,
+      y,
+      fillColor: getButtonFillColor(entry.color),
+      tool: entry.tool,
+      color: entry.color,
+      icon: entry.tool === "eraser" ? "⌫" : undefined,
+      rainbow: entry.color?.dynamic === "rainbow",
+      onToolChange,
+    }));
   });
+  return buttons;
+}
+
+function getPaletteLayout(width: number, height: number): { startX: number; startY: number; spacing: number } {
+  const total = PALETTE.length + 1;
+  const menuSafeX = 220;
+  const rightSafeX = width - 360;
+  const spacing = Math.max(74, Math.min(96, (rightSafeX - menuSafeX) / Math.max(1, total - 1)));
+  return {
+    startX: menuSafeX,
+    startY: Math.max(134, height * 0.18),
+    spacing,
+  };
+}
+
+function getButtonFillColor(color: PaintColor | null): number {
+  if (!color) return HEX.bgElevated;
+  if (color.dynamic === "rainbow") return HEX.white;
+  return color.hex;
+}
+
+function createToolButton(config: {
+  scene: Phaser.Scene;
+  x: number;
+  y: number;
+  fillColor: number;
+  tool: Tool;
+  color: PaintColor | null;
+  icon?: string;
+  rainbow?: boolean;
+  onToolChange: OnToolChange;
+}): PaintToolButton {
+  const button = createPaintColor(config.scene, config.x, config.y, {
+    fillColor: config.fillColor,
+    icon: config.icon,
+    rainbow: config.rainbow,
+    radius: 30,
+    zonePad: 38,
+    onActivate: () => {
+      config.onToolChange(config.tool, config.color);
+      button.reset();
+    },
+    depth: DEPTH.hud,
+  });
+  return { button, tool: config.tool, color: config.color };
 }
 
 export interface StrokeContext { positions: ({ x: number; y: number } | null)[]; last: ({ x: number; y: number } | null)[]; drawing: Set<number>; tool: Tool; color: PaintColor; brushSize: number; eraserSize: number; }
@@ -151,7 +190,7 @@ export function applyActiveStrokes(tex: Phaser.Textures.CanvasTexture, ctx: Stro
     canvas.lineCap = "round"; canvas.lineJoin = "round";
     canvas.lineWidth = ctx.tool === "eraser" ? ctx.eraserSize : ctx.brushSize;
     canvas.globalCompositeOperation = ctx.tool === "eraser" ? "destination-out" : "source-over";
-    canvas.strokeStyle = ctx.color.color;
+    canvas.strokeStyle = getStrokeStyle(ctx.color, current);
     canvas.beginPath(); canvas.moveTo(previous.x, previous.y); canvas.lineTo(current.x, current.y); canvas.stroke();
     canvas.restore();
     last[i] = { ...current };
@@ -159,4 +198,10 @@ export function applyActiveStrokes(tex: Phaser.Textures.CanvasTexture, ctx: Stro
   }
   if (changed) tex.refresh();
   return last;
+}
+
+function getStrokeStyle(color: PaintColor, point: Point): string {
+  if (color.dynamic !== "rainbow") return color.color;
+  const hue = Math.round((performance.now() * 0.14 + point.x * 0.2 + point.y * 0.2) % 360);
+  return `hsl(${hue} 100% 52%)`;
 }
