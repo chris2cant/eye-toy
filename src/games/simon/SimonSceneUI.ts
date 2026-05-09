@@ -4,6 +4,9 @@ import { createScoreBadge } from "../../design-system/components/ScoreBadge";
 import { createLivesBadge } from "../../design-system/components/LivesBadge";
 import type { ScoreBadgeHandle } from "../../design-system/components/ScoreBadge";
 import type { LivesBadgeHandle } from "../../design-system/components/LivesBadge";
+import { DwellButton } from "../../design-system/DwellButton";
+import { DIFFICULTIES, DIFFICULTY_CONFIGS } from "./SimonSceneConfig";
+import type { Difficulty } from "./SimonSceneConfig";
 
 export interface SimonHUD {
   scoreBadge: ScoreBadgeHandle;
@@ -58,6 +61,21 @@ export interface GameOverPanelElements {
   overlay: Phaser.GameObjects.Container;
   txtScore: Phaser.GameObjects.Text;
   txtBest: Phaser.GameObjects.Text;
+}
+
+export function createDifficultySelector(
+  scene: Phaser.Scene,
+  cx: number,
+  y: number,
+  onSelect: (d: Difficulty) => void,
+): DwellButton[] {
+  return DIFFICULTIES.map((diff, i) => new DwellButton(scene, cx + (i - 1) * 140, y, {
+    label: DIFFICULTY_CONFIGS[diff].label,
+    fontSize: "17px",
+    onActivate: () => onSelect(diff),
+    depth: DEPTH.hud,
+    dwellMs: 1000,
+  }));
 }
 
 export function createGameOverPanel(scene: Phaser.Scene, width: number, height: number): GameOverPanelElements {

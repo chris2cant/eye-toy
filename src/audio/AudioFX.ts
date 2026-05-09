@@ -78,6 +78,16 @@ export const audioFX = {
     playSequence(notes);
   },
 
+  victory() {
+    playSequence([
+      { freq: 523.25, end: 523.25, startOffset: 0,    dur: 0.12, type: "sine",     gain: 0.3  },
+      { freq: 659.25, end: 659.25, startOffset: 0.12, dur: 0.12, type: "sine",     gain: 0.3  },
+      { freq: 783.99, end: 783.99, startOffset: 0.24, dur: 0.12, type: "sine",     gain: 0.3  },
+      { freq: 1046.5, end: 1046.5, startOffset: 0.36, dur: 0.28, type: "triangle", gain: 0.26 },
+      { freq: 1318.5, end: 1046.5, startOffset: 0.56, dur: 0.38, type: "sine",     gain: 0.2  },
+    ]);
+  },
+
   gameOver() {
     const now = ctx.currentTime;
     if (ctx.state === "suspended") void ctx.resume();
