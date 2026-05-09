@@ -70,6 +70,28 @@ export class SandParticleSystem {
     this._total += count;
   }
 
+  spawnInDisk(x: number, y: number, spread: number, count: number): void {
+    if (count < 1) return;
+    if (spread <= 1) {
+      this.spawnAt(x, y, count);
+      return;
+    }
+    const clampedSpread = Phaser.Math.Clamp(spread, 10, 44);
+    const emissionPoints = Math.max(1, Math.min(10, Math.ceil(count / 20)));
+    const particlesPerPoint = Math.max(1, Math.round(count / emissionPoints));
+    let emitted = 0;
+    for (let index = 0; index < emissionPoints; index++) {
+      const angle = Math.random() * Math.PI * 2;
+      const distance = Math.sqrt(Math.random()) * clampedSpread;
+      const particleX = x + Math.cos(angle) * distance;
+      const particleY = y + Math.sin(angle) * distance;
+      const particlesForThisPoint = Math.min(particlesPerPoint, count - emitted);
+      this.emitter.explode(particlesForThisPoint, particleX, particleY);
+      emitted += particlesForThisPoint;
+    }
+    this._total += count;
+  }
+
   get total(): number {
     return this._total;
   }

@@ -12,6 +12,8 @@ export interface MotionCluster {
   y: number;
   /** Movement intensity in [0, 1]. */
   intensity: number;
+  /** Approximate moving area radius (pixels). */
+  spread: number;
 }
 
 interface WorkerInput {
@@ -25,7 +27,7 @@ interface WorkerInput {
 }
 
 interface WorkerOutput {
-  clusters: Array<{ x: number; y: number; intensity: number }>;
+  clusters: Array<{ x: number; y: number; intensity: number; spread: number }>;
 }
 
 /**
@@ -114,6 +116,7 @@ export class MotionDetector {
       x: cl.x * this.scaleX,
       y: cl.y * this.scaleY,
       intensity: cl.intensity,
+      spread: cl.spread * Math.max(this.scaleX, this.scaleY),
     }));
     this.onClusters(clusters);
   };

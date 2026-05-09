@@ -1,7 +1,6 @@
 import Phaser from "phaser";
 import { handTracker } from "../../camera/HandTracker";
 import { COLOR, FONT, DEPTH, HEX } from "../../design-system/tokens";
-import { DwellButton } from "../../design-system/DwellButton";
 import { WebcamLayer } from "../../scenes/WebcamLayer";
 import { SandParticleSystem } from "./SandParticleSystem";
 import { MotionDetector, type MotionCluster } from "./MotionDetector";
@@ -16,7 +15,6 @@ export class SableMagiqueScene extends Phaser.Scene {
   private webcam!: WebcamLayer;
   private particleSystem!: SandParticleSystem;
   private motionDetector!: MotionDetector;
-  private btnBack!: DwellButton;
   private scoreTxt!: Phaser.GameObjects.Text;
   // Top-2 motion clusters used to drive DwellButton
   private handPositions: ({ x: number; y: number } | null)[] = [null, null];
@@ -30,6 +28,8 @@ export class SableMagiqueScene extends Phaser.Scene {
 
   async create() {
     const { width, height } = this.scale;
+
+    this.input.keyboard!.on("keydown-Q", () => this.scene.start("MenuScene", { selectedGameKey: this.sys.settings.key }));
 
     // Camera only — no MediaPipe, no neural-net inference on main thread
     const videoEl = await handTracker.initCamera();
@@ -71,15 +71,6 @@ export class SableMagiqueScene extends Phaser.Scene {
       })
       .setOrigin(1, 0)
       .setDepth(DEPTH.topUi);
-
-    this.btnBack = new DwellButton(this, 100, height * 0.12, {
-      label: "← MENU",
-      fontSize: "20px",
-      onActivate: () => this.scene.start("MenuScene", { selectedGameKey: this.sys.settings.key }),
-      depth: DEPTH.hud,
-      dwellMs: 1000,
-      fillColor: HEX.nightBlue,
-    });
 
     this.add
       .text(width / 2, height * 0.94, "Bouge les mains — le sable coule sous tes doigts", {
@@ -137,8 +128,9 @@ export class SableMagiqueScene extends Phaser.Scene {
     this.handPositions[1] = sorted[1] ?? null;
 
     for (const cl of clusters) {
-      const count = Math.max(1, Math.round(cl.intensity * PARTICLES.BURST_MAX * scale));
-      this.particleSystem.spawnAt(cl.x, cl.y, count);
+      const densityBoost = Phaser.Math.Clamp(cl.spread / 16, 1.4, 4.8);
+      const count = Math.max(1, Math.round(cl.intensity * PARTICLES.BURST_MAX * scale * densityBoost));
+      this.particleSystem.spawnInDisk(cl.x, cl.y, cl.spread, count);
     }
   };
 
@@ -147,7 +139,6 @@ export class SableMagiqueScene extends Phaser.Scene {
     this.webcam.render(time, SAND_WEBCAM_FPS);
     this.motionDetector.tick();
     this.particleSystem.update(delta);
-    this.btnBack.update(this.handPositions, delta);
 
     if (this.particleSystem.total !== this.lastScoreTotal) {
       this.lastScoreTotal = this.particleSystem.total;

@@ -15,6 +15,7 @@ interface RawCluster {
   x: number;
   y: number;
   intensity: number;
+  spread: number;
 }
 
 interface WorkerOutput {
@@ -76,6 +77,7 @@ self.onmessage = (msg: MessageEvent<WorkerInput>): void => {
       x: cl.x,
       y: cl.y,
       intensity: Math.min(1, (cl.totalDiff / cl.count / 255) * (1 + cl.count * 0.04)),
+      spread: Math.max(step, Math.sqrt(cl.count) * step * 0.9),
     })),
   };
 
