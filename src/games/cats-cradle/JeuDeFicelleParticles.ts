@@ -44,6 +44,24 @@ export class ParticleSystem {
     }
   }
 
+  spawnFingerJet(x: number, y: number, color: string): void {
+    for (let i = 0; i < 4; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 68 + Math.random() * 92;
+      const maxLife = 280 + Math.random() * 200;
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: maxLife,
+        maxLife,
+        color,
+        radius: 3.2 + Math.random() * 2.8,
+      });
+    }
+  }
+
   pushTrail(from: { x: number; y: number }, to: { x: number; y: number }, color: string, style: CordStyleForTrail): void {
     if (style === "laser") return;
     this.trails.push({

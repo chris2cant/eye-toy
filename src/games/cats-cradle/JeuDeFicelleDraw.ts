@@ -123,9 +123,9 @@ export function drawParticleLayer(ctx: CanvasRenderingContext2D, particles: Part
   for (const particle of particles) {
     const alpha = particle.life / particle.maxLife;
     ctx.save();
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = Math.min(1, alpha * 1.25);
     ctx.shadowColor = particle.color;
-    ctx.shadowBlur = 12;
+    ctx.shadowBlur = 20;
     ctx.fillStyle = particle.color;
     ctx.beginPath();
     ctx.arc(particle.x, particle.y, particle.radius * alpha, 0, Math.PI * 2);
