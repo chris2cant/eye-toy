@@ -106,6 +106,7 @@ DEPTH.cursor  // 30   → curseurs main
 | Feedback positif (+100) | `showFeedback()` | `components/FeedbackBurst` |
 | Feedback combo (×5) | `showCombo()` | `components/ComboBadge` |
 | Barre de progression | `createProgressBar()` | `components/ProgressBar` |
+| Pastille couleur interactive (Paint) | `createPaintColor()` | `components/PaintColor` |
 | Carte de sélection de jeu | `createGameCard()` | `components/GameCard` |
 | Bouton action (JOUER, REJOUER) | `DwellButton` | `DwellButton` |
 | Flèche de navigation (◀/▶) | `NavArrow` | `components/NavArrow` |
@@ -241,6 +242,32 @@ bar.setProgress(0.75);  // 0.0 → 1.0
 bar.container
 bar.destroy()
 ```
+
+---
+
+### `createPaintColor(scene, x, y, config)`
+
+Pastille circulaire interactive avec dwell ring, état actif visuel et callback d’activation.
+
+```typescript
+import { createPaintColor } from "../design-system/components/PaintColor";
+import type { PaintColorHandle } from "../design-system/components/PaintColor";
+
+const swatch = createPaintColor(scene, 74, 260, {
+  fillColor: HEX.punchyPink,
+  onActivate: () => { ... },
+  depth: DEPTH.hud,
+  radius: 34,
+  dwellMs: 850,
+});
+
+swatch.setActive(true);         // anneau actif
+swatch.update(handPositions, delta); // dans update()
+swatch.reset();                 // après activation si besoin
+swatch.destroy();
+```
+
+**Usage :** palette latérale de couleurs, outils mono-icône (gomme, etc.) avec style homogène.
 
 ---
 

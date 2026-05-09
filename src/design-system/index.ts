@@ -23,3 +23,6 @@ export { createGameCard } from "./components/GameCard";
 export type { GameCardHandle, GameCardConfig } from "./components/GameCard";
 export { NavArrow } from "./components/NavArrow";
 export type { NavArrowConfig, NavArrowDirection } from "./components/NavArrow";
+export { createPaintColor } from "./components/PaintColor";
+export type { PaintColorConfig, PaintColorHandle } from "./components/PaintColor";
+export { runCountdown } from "./components/Countdown";
