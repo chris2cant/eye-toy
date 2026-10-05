@@ -55,26 +55,3 @@ export function drawRotatedRect(gfx: Phaser.GameObjects.Graphics, spec: RotatedR
   gfx.fillPath();
 }
 
-export interface WebcamRenderParams {
-  tex: Phaser.Textures.CanvasTexture;
-  videoEl: HTMLVideoElement;
-  width: number;
-  height: number;
-}
-
-export function renderWebcamToCanvas(params: WebcamRenderParams): void {
-  const { tex, videoEl, width, height } = params;
-  const vw = videoEl.videoWidth;
-  const vh = videoEl.videoHeight;
-  if (!vw || !vh) return;
-  const scale = Math.max(width / vw, height / vh);
-  const srcW = width / scale;
-  const srcH = height / scale;
-  const ctx = tex.getContext();
-  ctx.save();
-  ctx.translate(width, 0);
-  ctx.scale(-1, 1);
-  ctx.drawImage(videoEl, (vw - srcW) / 2, (vh - srcH) / 2, srcW, srcH, 0, 0, width, height);
-  ctx.restore();
-  tex.refresh();
-}

@@ -16,6 +16,10 @@ export const PARTICLES = {
   ANGLE_MAX: 96,
   /** Hard cap on particles per single hand burst. */
   BURST_MAX: 28,
+  /** Hard cap on particles emitted for a single cluster (any grain scale). */
+  CLUSTER_MAX: 320,
+  /** Hard cap on simultaneously alive particles. */
+  MAX_ALIVE: 2500,
   /** Hand velocity (px between landmark frames) above which sand spawns. */
   MOTION_THRESHOLD: 10,
   /** particles = velocity * VELOCITY_SCALE, capped at BURST_MAX. */

@@ -1,7 +1,6 @@
 export { COLOR, HEX, FONT, TOKENS, DEPTH, GAME_CIRCLE_PALETTE } from "./tokens";
 export { DwellButton } from "./DwellButton";
 export type { DwellButtonConfig } from "./DwellButton";
-export { HandCursors } from "./HandCursors";
 
 // Motion
 export { popIn, pulse, hitFeedback, shake, confetti } from "./motion/animations";

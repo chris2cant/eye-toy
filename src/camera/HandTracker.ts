@@ -1,6 +1,8 @@
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
 import type { HandLandmarkerResult } from "@mediapipe/tasks-vision";
 import Phaser from "phaser";
+import { measure } from "./perfProbe";
+import { resolveModelUrl } from "./modelUrl";
 
 export type HandLandmark = { x: number; y: number; z: number };
 export type PinchPoint = { x: number; y: number; handIndex: number };
@@ -9,15 +11,32 @@ export type CameraOptions = { width?: number; height?: number; frameRate?: numbe
 export type HandDetectorOptions = { numHands?: number };
 export type TrackerRuntimeOptions = { targetFps?: number; phaseMs?: number };
 
-const MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
-
 const THUMB_TIP = 4;
 const INDEX_TIP = 8;
 const PINCH_THRESHOLD = 0.08;
 const DEFAULT_CAMERA: Required<CameraOptions> = { width: 640, height: 480, frameRate: 30 };
 const DEFAULT_NUM_HANDS = 2;
 const DEFAULT_TARGET_FPS = 30;
+const DETECT_PROBE = "hand";
+
+type Vision = Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>;
+
+/** Tente le delegate GPU, retombe sur CPU si indisponible. */
+async function createLandmarker(vision: Vision, numHands: number): Promise<HandLandmarker> {
+  const modelAssetPath = await resolveModelUrl("hand");
+  const create = (delegate: "GPU" | "CPU") =>
+    HandLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath, delegate },
+      numHands,
+      runningMode: "VIDEO",
+    });
+  try {
+    return await create("GPU");
+  } catch (err) {
+    console.warn("[HandTracker] delegate GPU indisponible, repli CPU:", err);
+    return create("CPU");
+  }
+}
 
 class HandTrackerClass extends Phaser.Events.EventEmitter {
   private landmarker: HandLandmarker | null = null;
@@ -29,6 +48,8 @@ class HandTrackerClass extends Phaser.Events.EventEmitter {
   private numHands = DEFAULT_NUM_HANDS;
   private targetFrameMs = 1000 / DEFAULT_TARGET_FPS;
   private nextDetectAt = 0;
+  private lastVideoTime = -1;
+  private loading: Promise<void> | null = null;
 
   get isInitialized(): boolean {
     return this.landmarker !== null;
@@ -64,23 +85,28 @@ class HandTrackerClass extends Phaser.Events.EventEmitter {
 
   async initDetector(options: HandDetectorOptions = {}): Promise<void> {
     const numHands = options.numHands ?? DEFAULT_NUM_HANDS;
-    if (this.landmarker) {
-      if (numHands !== this.numHands) {
-        await this.landmarker.setOptions({ numHands });
-        this.numHands = numHands;
-        this.prevPinching = new Array<boolean>(numHands).fill(false);
-      }
-      return;
-    }
-    const vision = await FilesetResolver.forVisionTasks("/wasm");
-    this.landmarker = await HandLandmarker.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: MODEL_URL },
-      numHands,
-      runningMode: "VIDEO",
+    this.loading ??= this.loadLandmarker(numHands).catch((err: unknown) => {
+      this.loading = null;
+      throw err;
     });
+    await this.loading;
+    await this.applyNumHands(numHands);
+  }
+
+  private async loadLandmarker(numHands: number): Promise<void> {
+    if (this.landmarker) return;
+    const vision = await FilesetResolver.forVisionTasks("/wasm");
+    this.landmarker = await createLandmarker(vision, numHands);
     this.numHands = numHands;
     this.prevPinching = new Array<boolean>(numHands).fill(false);
     console.log("[HandTracker] initialisé");
+  }
+
+  private async applyNumHands(numHands: number): Promise<void> {
+    if (!this.landmarker || numHands === this.numHands) return;
+    await this.landmarker.setOptions({ numHands });
+    this.numHands = numHands;
+    this.prevPinching = new Array<boolean>(numHands).fill(false);
   }
 
   start(options: TrackerRuntimeOptions = {}): void {
@@ -111,10 +137,13 @@ class HandTrackerClass extends Phaser.Events.EventEmitter {
     return { x: 1 - (thumb.x + index.x) / 2, y: (thumb.y + index.y) / 2, handIndex };
   }
 
+  private hasListeners(): boolean {
+    return this.listenerCount("landmarks") > 0 || this.listenerCount("pinch") > 0;
+  }
+
   private detectAndEmit(): void {
-    const result: HandLandmarkerResult = this.landmarker!.detectForVideo(
-      this.videoEl!,
-      performance.now(),
+    const result: HandLandmarkerResult = measure(DETECT_PROBE, () =>
+      this.landmarker!.detectForVideo(this.videoEl!, performance.now()),
     );
     const pinches: PinchPoint[] = [];
 
@@ -136,7 +165,9 @@ class HandTrackerClass extends Phaser.Events.EventEmitter {
   private tick = (): void => {
     if (!this.running || !this.videoEl || !this.landmarker) return;
     const now = performance.now();
-    if (this.videoEl.readyState >= 2 && now >= this.nextDetectAt) {
+    const isNewFrame = this.videoEl.currentTime !== this.lastVideoTime;
+    if (this.videoEl.readyState >= 2 && now >= this.nextDetectAt && isNewFrame && this.hasListeners()) {
+      this.lastVideoTime = this.videoEl.currentTime;
       this.detectAndEmit();
       this.nextDetectAt = now + this.targetFrameMs;
     }

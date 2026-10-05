@@ -21,6 +21,5 @@ export const DIFFICULTY_CONFIGS: Record<Difficulty, { label: string; flashMs: nu
 export const DWELL_ZONE_MS = 800;
 export const DWELL_START_MS = 2000;
 export const TRACKER_FPS = 24;
-export const WEBCAM_FPS = 20;
 export const HS_KEY = "simon-eyetoy-highscore";
 export const ZONE_RADIUS_RATIO = 0.07;

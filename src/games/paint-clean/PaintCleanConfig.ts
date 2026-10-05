@@ -1,5 +1,4 @@
 export const PAINT_CLEAN = {
-  webcamFps: 20,
   rounds: 3,
   roundDurationSec: 10,
   roundColors: ["#2FFFAA", "#FFC93C", "#FF4F93"],

@@ -2,10 +2,11 @@ import { COLOR } from "../../design-system/tokens";
 import { FINGER_PALETTE } from "./JeuDeFicelleCords";
 import type { CordStyle } from "./JeuDeFicelleCords";
 import type { Particle, TrailSegment } from "./JeuDeFicelleParticles";
+import { drawGlow } from "./JeuDeFicelleGlow";
 
 export const RESONANCE_MS = 520;
-export const SMOOTH_BASE_SPEED = 18;
-export const SMOOTH_FAST_SPEED = 42;
+export const SMOOTH_BASE_SPEED = 32;
+export const SMOOTH_FAST_SPEED = 80;
 
 type Point = { x: number; y: number };
 
@@ -72,67 +73,61 @@ export function drawFingertipDots(ctx: CanvasRenderingContext2D, smoothTips: (Po
   }
 }
 
+function fillDot(ctx: CanvasRenderingContext2D, tip: Point, radius: number): void {
+  ctx.beginPath();
+  ctx.arc(tip.x, tip.y, radius, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function drawSingleFingertipDot(ctx: CanvasRenderingContext2D, tip: Point, fi: number, isBlueWeb: boolean): void {
   const color = isBlueWeb ? (fi % 2 === 0 ? COLOR.brandPrimary : COLOR.info) : FINGER_PALETTE[fi];
   const outerRadius = isBlueWeb ? 18 : 14;
   const coreRadius = isBlueWeb ? 5.8 : 4.8;
 
-  ctx.save();
-  ctx.shadowColor = color;
-  ctx.shadowBlur = isBlueWeb ? 34 : 24;
+  drawGlow(ctx, color, { x: tip.x, y: tip.y, radius: outerRadius * 2.4, alpha: isBlueWeb ? 0.7 : 0.55 });
+
   ctx.fillStyle = color;
-
-  ctx.globalAlpha = isBlueWeb ? 0.18 : 0.14;
-  ctx.beginPath(); ctx.arc(tip.x, tip.y, outerRadius, 0, Math.PI * 2); ctx.fill();
-
   ctx.globalAlpha = isBlueWeb ? 0.55 : 0.42;
-  ctx.beginPath(); ctx.arc(tip.x, tip.y, outerRadius * 0.48, 0, Math.PI * 2); ctx.fill();
+  fillDot(ctx, tip, outerRadius * 0.48);
 
   ctx.globalAlpha = 0.95;
-  ctx.shadowBlur = isBlueWeb ? 18 : 14;
   ctx.fillStyle = isBlueWeb ? "#e9ffff" : color;
-  ctx.beginPath(); ctx.arc(tip.x, tip.y, coreRadius, 0, Math.PI * 2); ctx.fill();
+  fillDot(ctx, tip, coreRadius);
 
   ctx.globalAlpha = 0.72;
-  ctx.shadowBlur = 0;
   ctx.fillStyle = "#ffffff";
-  ctx.beginPath(); ctx.arc(tip.x, tip.y, Math.max(2.2, coreRadius * 0.42), 0, Math.PI * 2); ctx.fill();
-  ctx.restore();
+  fillDot(ctx, tip, Math.max(2.2, coreRadius * 0.42));
+  ctx.globalAlpha = 1;
 }
 
 export function drawTrailLayer(ctx: CanvasRenderingContext2D, trails: TrailSegment[]): void {
+  ctx.lineCap = "round";
   for (let i = trails.length - 1; i >= 0; i--) {
     const trail = trails[i];
     const alpha = trail.life / trail.maxLife;
-    ctx.save();
-    ctx.globalAlpha = alpha * 0.18;
-    ctx.shadowColor = trail.color;
-    ctx.shadowBlur = 18;
     ctx.strokeStyle = trail.color;
-    ctx.lineWidth = 0.6 + alpha * 0.9;
-    ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(trail.from.x, trail.from.y);
     ctx.lineTo(trail.to.x, trail.to.y);
+    ctx.globalAlpha = alpha * 0.08;
+    ctx.lineWidth = 5 + alpha * 3;
     ctx.stroke();
-    ctx.restore();
+    ctx.globalAlpha = alpha * 0.18;
+    ctx.lineWidth = 0.6 + alpha * 0.9;
+    ctx.stroke();
   }
+  ctx.globalAlpha = 1;
 }
 
 export function drawParticleLayer(ctx: CanvasRenderingContext2D, particles: Particle[]): void {
   for (const particle of particles) {
     const alpha = particle.life / particle.maxLife;
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, alpha * 1.25);
-    ctx.shadowColor = particle.color;
-    ctx.shadowBlur = 20;
-    ctx.fillStyle = particle.color;
-    ctx.beginPath();
-    ctx.arc(particle.x, particle.y, particle.radius * alpha, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    const radius = particle.radius * alpha;
+    drawGlow(ctx, particle.color, { x: particle.x, y: particle.y, radius: radius * 4, alpha: Math.min(1, alpha * 1.25) });
   }
+  ctx.globalAlpha = 1;
 }
+
 
 export function updateSmoothedTips(smoothTips: (Point | null)[][], targetTips: (Point | null)[][], delta: number): void {
   const dt = Math.min(delta, 50) / 1000;
@@ -143,7 +138,7 @@ export function updateSmoothedTips(smoothTips: (Point | null)[][], targetTips: (
       const prev = smoothTips[hi][fi];
       if (!prev) { smoothTips[hi][fi] = { ...target }; continue; }
       const dist = Math.hypot(target.x - prev.x, target.y - prev.y);
-      const speed = dist > 44 ? SMOOTH_FAST_SPEED : SMOOTH_BASE_SPEED;
+      const speed = dist > 30 ? SMOOTH_FAST_SPEED : SMOOTH_BASE_SPEED;
       const alpha = 1 - Math.exp(-speed * dt);
       prev.x += (target.x - prev.x) * alpha;
       prev.y += (target.y - prev.y) * alpha;

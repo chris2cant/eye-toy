@@ -7,10 +7,11 @@ import { DwellButton } from "../design-system/DwellButton";
 import { NavArrow } from "../design-system/components/NavArrow";
 import { createGameCard } from "../design-system/components/GameCard";
 import type { GameCardHandle } from "../design-system/components/GameCard";
-import { HandCursors } from "../design-system/HandCursors";
+import { WebcamLayer } from "./WebcamLayer";
+import { listenLandmarks } from "./sceneHelpers";
 import { GAMES } from "./menu/MenuSceneData";
 import type { Updatable, MenuSceneData } from "./menu/MenuSceneData";
-import { computeCardLayout, renderWebcamToCanvas } from "./menu/MenuSceneLayout";
+import { computeCardLayout } from "./menu/MenuSceneLayout";
 import type { CarouselConfig } from "./menu/MenuSceneLayout";
 import { createMenuDecorations, createMenuTitle } from "./menu/MenuSceneDecorations";
 import { createCameraStatus } from "./menu/MenuSceneStats";
@@ -18,19 +19,16 @@ import type { CameraStatusWidget } from "./menu/MenuSceneStats";
 
 const PALM_LANDMARK = 9;
 const MENU_TRACKER_FPS = 20;
-const MENU_WEBCAM_FPS = 15;
-const MENU_WEBCAM_FRAME_MS = 1000 / MENU_WEBCAM_FPS;
+const MENU_WEBCAM_OPACITY = 0.65;
 
 export class MenuScene extends Phaser.Scene {
-  private webcamTex: Phaser.Textures.CanvasTexture | null = null;
-  private cursors!: HandCursors;
+  private webcam!: WebcamLayer;
   private btnPrev!: NavArrow;
   private btnNext!: NavArrow;
   private btnSelect!: DwellButton;
   private allBtns: Updatable[] = [];
   private handPositions: ({ x: number; y: number } | null)[] = [null, null];
   private currentIndex = 0;
-  private nextWebcamRenderAt = 0;
   private carouselCards: GameCardHandle[] = [];
   private dotArcs: Phaser.GameObjects.Arc[] = [];
   private cameraStatus!: CameraStatusWidget;
@@ -46,7 +44,8 @@ export class MenuScene extends Phaser.Scene {
     this.handPositions = [null, null];
     this.allBtns = [];
 
-    this.setupWebcam(width, height);
+    this.webcam = new WebcamLayer(this);
+    this.showWebcam();
     this.add.rectangle(cx, height / 2, width, height, HEX.cream, 0.52).setDepth(DEPTH.bg);
 
     createMenuDecorations(this, width, height);
@@ -58,7 +57,6 @@ export class MenuScene extends Phaser.Scene {
     this.buildDots(width, height, cx);
 
     this.updateCard();
-    this.cursors = new HandCursors(this, DEPTH.cursor);
     this.setupHandTracking();
   }
 
@@ -154,14 +152,9 @@ export class MenuScene extends Phaser.Scene {
     this.cameraStatus.text.setText(connected ? "Connectée" : "Erreur").setColor(connected ? "#22c55e" : "#ef4444");
   }
 
-  private setupWebcam(width: number, height: number) {
+  private showWebcam(): void {
     const videoEl = handTracker.getVideoEl();
-    if (!videoEl) return;
-    if (this.textures.exists("webcam-menu")) this.textures.remove("webcam-menu");
-    const tex = this.textures.createCanvas("webcam-menu", width, height);
-    if (!tex) return;
-    this.webcamTex = tex;
-    this.add.image(width / 2, height / 2, "webcam-menu").setDepth(DEPTH.webcam).setAlpha(0.65);
+    if (videoEl) this.webcam.setup(videoEl, MENU_WEBCAM_OPACITY);
   }
 
   private onLandmarks = ({ hands }: LandmarksPayload): void => {
@@ -174,20 +167,14 @@ export class MenuScene extends Phaser.Scene {
     });
   };
 
-  private attachHandTracking() {
-    handTracker.on("landmarks", this.onLandmarks);
-    this.events.once("shutdown", () => handTracker.off("landmarks", this.onLandmarks));
-  }
-
   private setupHandTracking() {
     void (async () => {
       try {
         await handTracker.initCamera();
         await handTracker.initDetector({ numHands: 2 });
-        const { width, height } = this.scale;
-        if (!this.webcamTex) this.setupWebcam(width, height);
+        this.showWebcam();
         handTracker.start({ targetFps: MENU_TRACKER_FPS });
-        this.attachHandTracking();
+        listenLandmarks(this, this.onLandmarks);
         this.updateCameraStatus(true);
       } catch (err) {
         console.warn("[MenuScene] caméra non disponible:", err);
@@ -196,18 +183,8 @@ export class MenuScene extends Phaser.Scene {
     })();
   }
 
-  update(time: number, delta: number) {
-    this.renderWebcam(time);
-    this.cursors.update(this.handPositions);
+  update(_time: number, delta: number) {
     this.allBtns.forEach((btn) => btn.update(this.handPositions, delta));
-  }
-
-  private renderWebcam(time: number): void {
-    const videoEl = handTracker.getVideoEl();
-    if (!this.webcamTex || !videoEl || videoEl.readyState < 2 || time < this.nextWebcamRenderAt) return;
-    const { width, height } = this.scale;
-    renderWebcamToCanvas({ tex: this.webcamTex, videoEl, width, height });
-    this.nextWebcamRenderAt = time + MENU_WEBCAM_FRAME_MS;
   }
 
   private getInitialGameIndex(selectedGameKey?: string): number {

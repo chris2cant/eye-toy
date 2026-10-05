@@ -2,14 +2,34 @@ import { FilesetResolver, PoseLandmarker } from "@mediapipe/tasks-vision";
 import type { PoseLandmarkerResult } from "@mediapipe/tasks-vision";
 import Phaser from "phaser";
 import { handTracker } from "./HandTracker";
+import { measure } from "./perfProbe";
+import { resolveModelUrl } from "./modelUrl";
 
 export type PoseLandmark = { x: number; y: number; z: number; visibility?: number };
 export type BodyPayload = { pose: PoseLandmark[] };
 export type BodyTrackerRuntimeOptions = { targetFps?: number; phaseMs?: number };
 
-const MODEL_URL =
-  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
 const DEFAULT_TARGET_FPS = 30;
+const DETECT_PROBE = "pose";
+
+type Vision = Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>;
+
+/** Tente le delegate GPU, retombe sur CPU si indisponible. */
+async function createLandmarker(vision: Vision): Promise<PoseLandmarker> {
+  const modelAssetPath = await resolveModelUrl("poseLite");
+  const create = (delegate: "GPU" | "CPU") =>
+    PoseLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath, delegate },
+      numPoses: 1,
+      runningMode: "VIDEO",
+    });
+  try {
+    return await create("GPU");
+  } catch (err) {
+    console.warn("[BodyTracker] delegate GPU indisponible, repli CPU:", err);
+    return create("CPU");
+  }
+}
 
 class BodyTrackerClass extends Phaser.Events.EventEmitter {
   private landmarker: PoseLandmarker | null = null;
@@ -17,6 +37,7 @@ class BodyTrackerClass extends Phaser.Events.EventEmitter {
   private running = false;
   private targetFrameMs = 1000 / DEFAULT_TARGET_FPS;
   private nextDetectAt = 0;
+  private lastVideoTime = -1;
 
   get isInitialized(): boolean {
     return this.landmarker !== null;
@@ -25,11 +46,7 @@ class BodyTrackerClass extends Phaser.Events.EventEmitter {
   async initDetector(): Promise<void> {
     if (this.landmarker) return;
     const vision = await FilesetResolver.forVisionTasks("/wasm");
-    this.landmarker = await PoseLandmarker.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: MODEL_URL },
-      numPoses: 1,
-      runningMode: "VIDEO",
-    });
+    this.landmarker = await createLandmarker(vision);
     console.log("[BodyTracker] initialisé");
   }
 
@@ -51,14 +68,27 @@ class BodyTrackerClass extends Phaser.Events.EventEmitter {
     cancelAnimationFrame(this.rafId);
   }
 
+  private detectAndEmit(video: HTMLVideoElement, landmarker: PoseLandmarker): void {
+    this.lastVideoTime = video.currentTime;
+    const result: PoseLandmarkerResult = measure(DETECT_PROBE, () =>
+      landmarker.detectForVideo(video, performance.now()),
+    );
+    const pose = (result.landmarks?.[0] ?? []) as PoseLandmark[];
+    this.emit("body", { pose });
+  }
+
+  private isReady(video: HTMLVideoElement | null, now: number): video is HTMLVideoElement {
+    if (!video || video.readyState < 2) return false;
+    if (now < this.nextDetectAt || video.currentTime === this.lastVideoTime) return false;
+    return this.listenerCount("body") > 0;
+  }
+
   private tick = (): void => {
     if (!this.running || !this.landmarker) return;
     const video = handTracker.getVideoEl();
     const now = performance.now();
-    if (video && video.readyState >= 2 && now >= this.nextDetectAt) {
-      const result: PoseLandmarkerResult = this.landmarker.detectForVideo(video, performance.now());
-      const pose = (result.landmarks?.[0] ?? []) as PoseLandmark[];
-      this.emit("body", { pose });
+    if (this.isReady(video, now)) {
+      this.detectAndEmit(video, this.landmarker);
       this.nextDetectAt = now + this.targetFrameMs;
     }
     this.rafId = requestAnimationFrame(this.tick);

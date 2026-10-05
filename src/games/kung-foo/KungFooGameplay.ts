@@ -1,5 +1,7 @@
 import Phaser from "phaser";
 import { audioFX } from "../../audio/AudioFX";
+import { MUSIC_TRACKS, startMusic } from "../../audio/music";
+import { handTracker } from "../../camera/HandTracker";
 import { showFeedback } from "../../design-system/components/FeedbackBurst";
 import { DEPTH, HEX } from "../../design-system/tokens";
 import type { MotionCluster } from "../sable-magique/MotionDetector";
@@ -7,7 +9,7 @@ import { Ninja } from "./Ninja";
 import { WaveManager } from "./WaveManager";
 import type { Difficulty, Platform } from "./WaveManager";
 import {
-  KF_BETWEEN_WAVES_MS, KF_GAME_DURATION, KF_HIT_TOLERANCE, KF_TURBO_DURATION_MS, KF_WOOSH_COOLDOWN_MS, KF_WOOSH_INTENSITY,
+  KF_BETWEEN_WAVES_MS, KF_GAMEPLAY_HAND_FPS, KF_GAME_DURATION, KF_HIT_TOLERANCE, KF_TURBO_DURATION_MS, KF_WOOSH_COOLDOWN_MS, KF_WOOSH_INTENSITY,
   KF_MIN_INTENSITY, JUMP_DURATION_MAX, JUMP_DURATION_MIN, MAX_LIVES, NINJA_ON_PLAT_X, STAGE_Y_FRACS,
 } from "./KungFooState";
 import type { KungFooState } from "./KungFooState";
@@ -17,6 +19,7 @@ export function initWaveManager(state: KungFooState, difficulty: Difficulty): vo
 }
 
 export function startGame(scene: Phaser.Scene, state: KungFooState): void {
+  handTracker.start({ targetFps: KF_GAMEPLAY_HAND_FPS });
   state.score = 0;
   state.lives = MAX_LIVES;
   state.gameStartTimestamp = performance.now();
@@ -182,15 +185,11 @@ export function tickTimer(scene: Phaser.Scene, state: KungFooState): void {
 }
 
 function startBgMusic(scene: Phaser.Scene, state: KungFooState): void {
-  if (state.bgMusic?.isPlaying) return;
-  state.bgMusic = scene.sound.add("music-background-ninja-fight", { loop: true, volume: 0.4 });
-  state.bgMusic.play();
+  state.bgMusic ??= startMusic(scene, MUSIC_TRACKS.ninjaFight, { loop: true, volume: 0.4 });
 }
 
 function stopBgMusic(state: KungFooState): void {
-  if (!state.bgMusic) return;
-  state.bgMusic.stop();
-  state.bgMusic.destroy();
+  state.bgMusic?.stop();
   state.bgMusic = null;
 }
 

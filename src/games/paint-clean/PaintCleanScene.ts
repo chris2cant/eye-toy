@@ -1,7 +1,10 @@
 import Phaser from "phaser";
+import { MUSIC_TRACKS, startMusic } from "../../audio/music";
+import type { MusicHandle } from "../../audio/music";
 import { handTracker } from "../../camera/HandTracker";
 import { COLOR, DEPTH, FONT } from "../../design-system/tokens";
 import { WebcamLayer } from "../../scenes/WebcamLayer";
+import { bindQuitKey, showCameraError } from "../../scenes/sceneHelpers";
 import { createScoreBadge } from "../../design-system/components/ScoreBadge";
 import { createTimerBadge } from "../../design-system/components/TimerBadge";
 import type { ScoreBadgeHandle } from "../../design-system/components/ScoreBadge";
@@ -20,14 +23,14 @@ export class PaintCleanScene extends Phaser.Scene {
   private handPositions: (Point | null)[] = [null, null];
   private gameActive = false;
   private roundIndex = 0;
-  private roundSecondsLeft = PAINT_CLEAN.roundDurationSec;
+  private roundSecondsLeft: number = PAINT_CLEAN.roundDurationSec;
   private roundScores = [0, 0, 0];
   private totalScore = 0;
   private scoreBadge!: ScoreBadgeHandle;
   private timerBadge!: TimerBadgeHandle;
   private roundTxt!: Phaser.GameObjects.Text;
   private tickTimer: Phaser.Time.TimerEvent | null = null;
-  private backgroundMusic: Phaser.Sound.BaseSound | null = null;
+  private backgroundMusic: MusicHandle | null = null;
 
   constructor() {
     super({ key: "PaintCleanScene" });
@@ -36,12 +39,12 @@ export class PaintCleanScene extends Phaser.Scene {
   async create(): Promise<void> {
     const { width, height } = this.scale;
 
-    this.input.keyboard?.on("keydown-Q", this.onQuitToMenu);
+    bindQuitKey(this);
 
     try {
       const videoEl = await handTracker.initCamera();
       this.webcam = new WebcamLayer(this);
-      this.webcam.setup(videoEl, width, height);
+      this.webcam.setup(videoEl);
       this.motionDetector = new MotionDetector(videoEl, width, height, this.onClusters);
       this.createPaintLayer(width, height);
       this.buildUi(width, height);
@@ -50,7 +53,8 @@ export class PaintCleanScene extends Phaser.Scene {
       this.scale.on("resize", this.onResize, this);
       this.events.once("shutdown", () => this.cleanupScene());
     } catch (err) {
-      this.showCameraError(width, height, err);
+      console.error("[PaintCleanScene] erreur d'initialisation:", err);
+      showCameraError(this);
     }
   }
 
@@ -169,9 +173,8 @@ export class PaintCleanScene extends Phaser.Scene {
     this.scoreBadge.setValue(this.totalScore);
   }
 
-  update(time: number, _delta: number): void {
+  update(): void {
     if (!this.webcam || !this.motionDetector) return;
-    this.webcam.render(time, PAINT_CLEAN.webcamFps);
     this.motionDetector.tick();
   }
 
@@ -182,12 +185,7 @@ export class PaintCleanScene extends Phaser.Scene {
     this.paintCurrentRoundColor();
   };
 
-  private readonly onQuitToMenu = (): void => {
-    this.scene.start("MenuScene", { selectedGameKey: this.sys.settings.key });
-  };
-
   private cleanupScene(): void {
-    this.input.keyboard?.off("keydown-Q", this.onQuitToMenu);
     if (this.tickTimer) this.tickTimer.destroy();
     this.stopBackgroundMusic();
     this.motionDetector?.destroy();
@@ -195,28 +193,11 @@ export class PaintCleanScene extends Phaser.Scene {
   }
 
   private startBackgroundMusic(): void {
-    if (this.backgroundMusic?.isPlaying) return;
-    this.backgroundMusic = this.sound.add("music-background-runner", { loop: true, volume: 0.35 });
-    this.backgroundMusic.play();
+    this.backgroundMusic ??= startMusic(this, MUSIC_TRACKS.runner, { loop: true, volume: 0.35 });
   }
 
   private stopBackgroundMusic(): void {
-    if (!this.backgroundMusic) return;
-    this.backgroundMusic.stop();
-    this.backgroundMusic.destroy();
+    this.backgroundMusic?.stop();
     this.backgroundMusic = null;
-  }
-
-  private showCameraError(width: number, height: number, err: unknown): void {
-    console.error("[PaintCleanScene] erreur d'initialisation:", err);
-    this.add
-      .text(width / 2, height / 2, "Caméra refusée\nVeuillez autoriser l'accès à la webcam", {
-        fontSize: "28px",
-        fontFamily: FONT.ui,
-        color: COLOR.danger,
-        align: "center",
-      })
-      .setOrigin(0.5)
-      .setDepth(DEPTH.topUi);
   }
 }

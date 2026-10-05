@@ -58,7 +58,7 @@ export class SkeletonScene extends Phaser.Scene {
     this.buildLegend(width, height);
 
     const videoEl = await handTracker.initCamera();
-    this.webcam.setup(videoEl, width, height);
+    this.webcam.setup(videoEl);
 
     this.add
       .text(width / 2, height - 16, "[Q]  Retour au menu", {
@@ -129,13 +129,11 @@ export class SkeletonScene extends Phaser.Scene {
     this.updateHandPositionsFromPose();
   };
 
-  update(time: number, _delta: number) {
+  update(time: number) {
     if (time >= this.nextVisualRenderAt) {
-      this.webcam.render();
       this.drawSkeleton();
       this.nextVisualRenderAt = time + SKELETON_RENDER_FRAME_MS;
     }
-    void _delta;
   }
 
   private isVisible(lm: PoseLandmark): boolean {

@@ -4,14 +4,12 @@ import { handTracker } from "../camera/HandTracker";
 import type { LandmarksPayload } from "../camera/HandTracker";
 import { COLOR, HEX, FONT, DEPTH } from "../design-system/tokens";
 import { DwellButton } from "../design-system/DwellButton";
-import { HandCursors } from "../design-system/HandCursors";
 import { buildGameOverFrame, buildGameOverEmblem, burstConfetti, buildGameOverHeader, drawGameOverScorePanel } from "./GameOverSceneFX";
 
 const PALM_LANDMARK = 9;
 const SCORE_COUNT_MAX_MS = 1800;
 
 export class GameOverScene extends Phaser.Scene {
-  private cursors!: HandCursors;
   private btnReplay!: DwellButton;
   private handPositions: ({ x: number; y: number } | null)[] = [null, null];
 
@@ -44,7 +42,6 @@ export class GameOverScene extends Phaser.Scene {
     this.buildReplayButton(cx, height);
     this.buildScoreSection(cx, height, { score, best, isBest });
 
-    this.cursors = new HandCursors(this, DEPTH.cursor);
     handTracker.start({ targetFps: 30 });
     handTracker.on("landmarks", this.onLandmarks);
     this.events.once("shutdown", () => handTracker.off("landmarks", this.onLandmarks));
@@ -153,7 +150,6 @@ export class GameOverScene extends Phaser.Scene {
   };
 
   update(_time: number, delta: number) {
-    this.cursors.update(this.handPositions);
     this.btnReplay.update(this.handPositions, delta);
   }
 

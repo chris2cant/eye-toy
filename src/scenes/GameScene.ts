@@ -1,13 +1,16 @@
 import Phaser from "phaser";
 import { audioFX } from "../audio/AudioFX";
+import { startMusic } from "../audio/music";
+import type { MusicHandle } from "../audio/music";
 import { handTracker } from "../camera/HandTracker";
 import type { LandmarksPayload } from "../camera/HandTracker";
-import { COLOR, FONT, DEPTH, HEX } from "../design-system/tokens";
+import { DEPTH, HEX } from "../design-system/tokens";
 import { CirclePool, computeHandBounds } from "./CirclePool";
 import type { HandBounds, CircleConfig } from "./CirclePool";
 import { WebcamLayer } from "./WebcamLayer";
+import { bindQuitKey, listenLandmarks, showCameraError } from "./sceneHelpers";
 import {
-  GAME_DURATION, GAME_TRACKER_FPS, GAME_WEBCAM_FPS,
+  GAME_DURATION, GAME_TRACKER_FPS,
   TIMER_ARC_FRAME_MS, BACKGROUND_MUSIC_KEY, TIERS, runCountdownSequence,
 } from "./GameSceneConfig";
 import type { DifficultyTier } from "./GameSceneConfig";
@@ -29,15 +32,15 @@ export class GameScene extends Phaser.Scene {
   private lastTickSecond = GAME_DURATION;
   private handPositions: ({ x: number; y: number } | null)[] = [null, null];
   private nextTimerArcRenderAt = 0;
-  private backgroundMusic: Phaser.Sound.BaseSound | null = null;
+  private backgroundMusic: MusicHandle | null = null;
 
   constructor() { super({ key: "GameScene" }); }
 
   async create() {
-    const { width, height } = this.scale;
     this.pool = new CirclePool(this);
     this.webcam = new WebcamLayer(this);
-    this.input.keyboard?.on("keydown-Q", this.onQuitToMenu);
+    bindQuitKey(this);
+    listenLandmarks(this, this.onLandmarks);
     this.debugGraphics = this.add.graphics().setDepth(DEPTH.topUi);
     const onDebug = (active: boolean) => {
       this.debugMode = active;
@@ -46,22 +49,15 @@ export class GameScene extends Phaser.Scene {
     this.game.events.on("debug:toggle", onDebug);
     this.events.once("shutdown", () => this.game.events.off("debug:toggle", onDebug));
     this.events.once("shutdown", () => this.stopBackgroundMusic());
-    this.events.once("shutdown", () => this.input.keyboard?.off("keydown-Q", this.onQuitToMenu));
     try {
       const videoEl = await handTracker.initCamera();
-      this.webcam.setup(videoEl, width, height);
+      this.webcam.setup(videoEl);
       await handTracker.initDetector({ numHands: 2 });
-      handTracker.on("landmarks", this.onLandmarks, this);
-      this.events.once("shutdown", () => handTracker.off("landmarks", this.onLandmarks, this));
       handTracker.start({ targetFps: GAME_TRACKER_FPS });
       this.runCountdown();
     } catch (err) {
       console.error("[GameScene] erreur d'initialisation:", err);
-      this.add
-        .text(width / 2, height / 2, "Caméra refusée\nVeuillez autoriser l'accès à la webcam", {
-          fontSize: "28px", color: COLOR.danger, fontFamily: FONT.ui, align: "center",
-        })
-        .setOrigin(0.5);
+      showCameraError(this);
     }
   }
 
@@ -109,18 +105,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private startBackgroundMusic(): void {
-    if (this.backgroundMusic?.isPlaying) return;
-    this.backgroundMusic = this.sound.add(BACKGROUND_MUSIC_KEY, {
-      loop: true,
-      volume: 0.35,
-    });
-    this.backgroundMusic.play();
+    this.backgroundMusic ??= startMusic(this, BACKGROUND_MUSIC_KEY, { loop: true, volume: 0.35 });
   }
 
   private stopBackgroundMusic(): void {
-    if (!this.backgroundMusic) return;
-    this.backgroundMusic.stop();
-    this.backgroundMusic.destroy();
+    this.backgroundMusic?.stop();
     this.backgroundMusic = null;
   }
 
@@ -163,7 +152,6 @@ export class GameScene extends Phaser.Scene {
   };
 
   update(time: number, _delta: number) {
-    this.webcam.render(time, GAME_WEBCAM_FPS);
     this.renderDebugBounds();
     if (time >= this.nextTimerArcRenderAt) {
       this.pool.renderTimerArcs(this.time.now);
@@ -178,10 +166,6 @@ export class GameScene extends Phaser.Scene {
       }
     }
   }
-
-  private readonly onQuitToMenu = (): void => {
-    this.scene.start("MenuScene", { selectedGameKey: this.sys.settings.key });
-  };
 
   private renderDebugBounds() {
     if (!this.debugMode) return;

@@ -22,6 +22,31 @@ export function makeEmptyTargetTips(): (Point | null)[][] {
   ];
 }
 
+const WRIST = 0;
+const INDEX_MCP = 5;
+const MIDDLE_MCP = 9;
+const FINGER_MCPS = [1, 5, 9, 13, 17];
+const FINGER_EXTENDED_RATIO = 1.45;
+const THUMB_EXTENDED_PALM_RATIO = 0.55;
+
+function landmarkDistance(a: HandLandmarkLike, b: HandLandmarkLike): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+// Le pouce est levé s'il est écarté de la base de l'index (relativement à la taille de la paume).
+function isThumbExtended(hand: HandLandmarkLike[]): boolean {
+  const palmSize = landmarkDistance(hand[WRIST], hand[MIDDLE_MCP]);
+  return landmarkDistance(hand[4], hand[INDEX_MCP]) > palmSize * THUMB_EXTENDED_PALM_RATIO;
+}
+
+/** Un doigt est levé si son bout est bien plus loin du poignet que sa base (replié : bout proche de la paume). */
+export function isFingerExtended(hand: HandLandmarkLike[], fingerIndex: number): boolean {
+  if (fingerIndex === 0) return isThumbExtended(hand);
+  const tipDist = landmarkDistance(hand[FINGERTIP_INDICES[fingerIndex]], hand[WRIST]);
+  const mcpDist = landmarkDistance(hand[FINGER_MCPS[fingerIndex]], hand[WRIST]);
+  return tipDist > mcpDist * FINGER_EXTENDED_RATIO;
+}
+
 export function mapHandLandmarks(
   hands: (HandLandmarkLike[] | null | undefined)[],
   mapper: (x: number, y: number) => Point,
@@ -32,6 +57,7 @@ export function mapHandLandmarks(
     const palm = hand[9];
     state.handPositions[i] = mapper(palm.x, palm.y);
     for (let fi = 0; fi < FINGERTIP_INDICES.length; fi++) {
+      if (!isFingerExtended(hand, fi)) continue;
       const lm = hand[FINGERTIP_INDICES[fi]];
       state.targetTips[i][fi] = mapper(lm.x, lm.y);
     }

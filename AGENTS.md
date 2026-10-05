@@ -12,10 +12,10 @@ Web game inspired by the PlayStation EyeToy. Live webcam feed, real-time hand/bo
 | --------------- | ------------------------- | ---------------------- |
 | Detection       | `@mediapipe/tasks-vision` | `^0.10.35`             |
 | 2D rendering    | Phaser 3                  | `^3.x`                 |
-| Language        | TypeScript                | `^6.0` (strict)        |
-| Bundler         | Vite                      | `^8.0`                 |
-| Package manager | pnpm                      | `9.x`                  |
-| Tests           | Playwright                | `^1.59` (Chromium GPU) |
+| Language        | TypeScript                | `^5.9` (strict)        |
+| Bundler         | Vite                      | `^6.4`                 |
+| Package manager | pnpm                      | `10.x`                 |
+| Tests           | Vitest (unitaires) + Playwright | `tests/unit` + `tests/` (Chromium GPU) |
 
 ## Commands
 
@@ -25,6 +25,7 @@ node copy-wasm.js     # copy MediaPipe .wasm files into public/wasm/ (auto via p
 pnpm dev              # dev server (runs copy-wasm as predev)
 pnpm build            # production build (runs copy-wasm as prebuild)
 pnpm test             # playwright --project=chromium-gpu
+pnpm test:unit        # vitest run (logique pure : clustering, WaveManager, perfProbe)
 pnpm format           # prettier --write
 ```
 
@@ -105,10 +106,13 @@ Les jeux webcam + MediaPipe sont très sensibles au coût main thread. Avant d'a
 - **Un seul modèle MediaPipe par scène si possible.** Ne pas lancer `HandLandmarker` + `PoseLandmarker` en parallèle sauf nécessité gameplay claire. Exemple validé : `SkeletonScene` utilise seulement `PoseLandmarker` et les points main/poignet de la pose pour le bouton retour.
 - **Limiter `numHands`.** Utiliser `numHands: 2` par défaut. Monter à `4` uniquement pour un gameplay qui l'exige explicitement, comme `JeuDeFicelleScene`.
 - **Cadencer les trackers.** Ne pas supposer que la détection doit tourner à 60 fps. Références actuelles : menu `20 fps`, jeux main classiques `24 fps`, squelette pose `15 fps`, ficelle 4 mains `20 fps`.
-- **Throttler la webcam.** `WebcamLayer.render(time, maxFps)` doit être utilisé dans les scènes de jeu. Références actuelles : menu `15 fps`, jeux main `20–24 fps`, ficelle `15 fps`.
+- **Webcam = `<video>` DOM.** `WebcamLayer` place l'élément vidéo derrière le canvas Phaser (`transparent: true`) : le navigateur gère miroir + cadrage cover, aucun `drawImage`/upload de texture par frame. Ne pas recopier la webcam dans un `CanvasTexture`.
+- **Pas d inférence inutile.** `HandTracker`/`BodyTracker` ne détectent que s'il y a au moins un listener et seulement sur nouvelle frame vidéo ; les scènes s'abonnent via `listenLandmarks(scene, handler)` (`src/scenes/sceneHelpers.ts`). Delegate GPU avec repli CPU.
+- **Pas de `shadowBlur` Canvas2D.** Utiliser des halos pré-rendus (`drawGlow` dans `JeuDeFicelleGlow.ts`) ou des traits larges translucides.
+- **MotionDetector.** Cadencé (25 fps), frame transférée au worker (zéro copie), clustering par grille spatiale (`motionClustering.ts`).
 - **Throttler les canvas/Graphics coûteux.** Les overlays plein écran, arcs, ombres, scanlines et redraws de `Graphics` ne doivent pas être recalculés chaque frame si une cadence `20–30 fps` suffit visuellement.
 - **Éviter les redraws sans changement.** Les composants UI comme `DwellButton` doivent redessiner seulement quand l'état visuel change (zone active, progression, cooldown), pas à chaque `update()`.
-- **Mesurer avec `DebugScene`.** Après toute scène MediaPipe, tester avec `D` et viser au moins `30 fps` en usage normal. Si une scène tombe sous `25 fps`, réduire d'abord fréquence webcam/détection avant d'ajouter de nouveaux effets.
+- **Mesurer avec `DebugScene`.** Le panneau `D` affiche FPS, Δ, mémoire et les temps moyens des sondes `measure(label, fn)` (`src/camera/perfProbe.ts` : `hand`, `pose`, `motion`, `overlay`). Après toute scène MediaPipe, tester avec `D` et viser au moins `30 fps` en usage normal. Si une scène tombe sous `25 fps`, réduire d'abord fréquence webcam/détection avant d'ajouter de nouveaux effets.
 
 ## UX guidelines — règles strictes
 

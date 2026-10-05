@@ -2,11 +2,11 @@ import Phaser from "phaser";
 import { handTracker } from "../../camera/HandTracker";
 import { COLOR, FONT, DEPTH, HEX } from "../../design-system/tokens";
 import { WebcamLayer } from "../../scenes/WebcamLayer";
+import { bindQuitKey } from "../../scenes/sceneHelpers";
 import { SandParticleSystem } from "./SandParticleSystem";
 import { MotionDetector, type MotionCluster } from "./MotionDetector";
 import { PARTICLES } from "./config";
 
-const SAND_WEBCAM_FPS = 20;
 
 const SCALE_STEPS = [0.25, 0.5, 1, 2, 4, 8, 16] as const;
 const SCALE_DEFAULT_IDX = 2; // 1×
@@ -29,12 +29,12 @@ export class SableMagiqueScene extends Phaser.Scene {
   async create() {
     const { width, height } = this.scale;
 
-    this.input.keyboard!.on("keydown-Q", () => this.scene.start("MenuScene", { selectedGameKey: this.sys.settings.key }));
+    bindQuitKey(this);
 
     // Camera only — no MediaPipe, no neural-net inference on main thread
     const videoEl = await handTracker.initCamera();
     this.webcam = new WebcamLayer(this);
-    this.webcam.setup(videoEl, width, height);
+    this.webcam.setup(videoEl);
 
     // Pixel-diff motion detection runs entirely in a Web Worker
     this.motionDetector = new MotionDetector(videoEl, width, height, this.onClusters);
@@ -42,9 +42,7 @@ export class SableMagiqueScene extends Phaser.Scene {
     this.particleSystem = new SandParticleSystem(this);
     this.buildUI(width, height);
 
-    this.scale.on("resize", (gameSize: Phaser.Structs.Size) => {
-      this.particleSystem.updateBounds(gameSize.width, gameSize.height);
-    });
+    this.scale.on("resize", this.onResize, this);
 
     this.input.keyboard!
       .on("keydown-UP", () => this.changeSandScale(+1))
@@ -52,7 +50,7 @@ export class SableMagiqueScene extends Phaser.Scene {
 
     this.events.once("shutdown", () => {
       this.motionDetector.destroy();
-      this.scale.off("resize");
+      this.scale.off("resize", this.onResize, this);
     });
   }
 
@@ -119,6 +117,10 @@ export class SableMagiqueScene extends Phaser.Scene {
     this.sandScaleTxt.setText(this.sandScaleLabel());
   }
 
+  private onResize = (gameSize: Phaser.Structs.Size): void => {
+    this.particleSystem.updateBounds(gameSize.width, gameSize.height);
+  };
+
   private onClusters = (clusters: MotionCluster[]): void => {
     const scale = SCALE_STEPS[this.sandScaleIdx];
 
@@ -129,14 +131,14 @@ export class SableMagiqueScene extends Phaser.Scene {
 
     for (const cl of clusters) {
       const densityBoost = Phaser.Math.Clamp(cl.spread / 16, 1.4, 4.8);
-      const count = Math.max(1, Math.round(cl.intensity * PARTICLES.BURST_MAX * scale * densityBoost));
+      const rawCount = Math.round(cl.intensity * PARTICLES.BURST_MAX * scale * densityBoost);
+      const count = Phaser.Math.Clamp(rawCount, 1, PARTICLES.CLUSTER_MAX);
       this.particleSystem.spawnInDisk(cl.x, cl.y, cl.spread, count);
     }
   };
 
   update(time: number, delta: number): void {
     if (!this.webcam) return;
-    this.webcam.render(time, SAND_WEBCAM_FPS);
     this.motionDetector.tick();
     this.particleSystem.update(delta);
 

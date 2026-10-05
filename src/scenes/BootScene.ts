@@ -1,4 +1,6 @@
 import Phaser from "phaser";
+import { preloadMusic } from "../audio/music";
+import { handTracker } from "../camera/HandTracker";
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -6,9 +8,6 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.audio("music-background-funny-cartoon", "/assets/audio/music-background-funny-cartoon.mp3");
-    this.load.audio("music-background-ninja-fight",   "/assets/audio/music-background-ninja-fight.mp3");
-    this.load.audio("music-background-runner",        "/assets/audio/music-background-runner.mp3");
     this.load.audio("sfx-punch",                      "/assets/audio/sfx-punch.mp3");
     this.load.audio("sfx-woosh-hand",                 "/assets/audio/sfx-woosh-hand.mp3");
     this.load.audio("sfx-electricity",                "/assets/audio/sfx-electricity.mp3");
@@ -30,6 +29,8 @@ export class BootScene extends Phaser.Scene {
     } else {
       this.scene.launch("DebugScene");
       this.scene.start("MenuScene");
+      preloadMusic(this.game);
+      handTracker.initDetector().catch((err: unknown) => console.warn("[BootScene] préchargement du modèle main échoué:", err));
     }
   }
 }

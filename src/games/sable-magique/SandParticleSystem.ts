@@ -47,6 +47,7 @@ export class SandParticleSystem {
         alpha: { start: 1, end: 0.85 },
         frequency: -1,
         reserve: 600,
+        maxAliveParticles: PARTICLES.MAX_ALIVE,
         deathZone: { type: "onLeave", source: this.deathRect },
         emitCallback: (particle: Phaser.GameObjects.Particles.Particle) => {
           particle.tint = this.currentTint;

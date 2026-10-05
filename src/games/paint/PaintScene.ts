@@ -2,8 +2,9 @@ import Phaser from "phaser";
 import { handTracker } from "../../camera/HandTracker";
 import type { LandmarksPayload } from "../../camera/HandTracker";
 import { DwellButton } from "../../design-system/DwellButton";
-import { COLOR, DEPTH, FONT } from "../../design-system/tokens";
+import { DEPTH } from "../../design-system/tokens";
 import { WebcamLayer } from "../../scenes/WebcamLayer";
+import { bindQuitKey, listenLandmarks, showCameraError } from "../../scenes/sceneHelpers";
 import { PALETTE, redrawToolHud, drawHandCursors, applyActiveStrokes, mapLandmark, getPinchDrawPosition, smoothPoint } from "./PaintSceneHUD";
 import type { Tool, PaintColor, PaintToolButton } from "./PaintSceneHUD";
 import { buildPaintUi } from "./PaintSceneUI";
@@ -12,7 +13,6 @@ const THUMB_TIP = 4;
 const INDEX_TIP = 8;
 const PALM_LANDMARK = 9;
 const PAINT_TRACKER_FPS = 24;
-const PAINT_WEBCAM_FPS = 24;
 const DEFAULT_BRUSH_SIZE = 28;
 const BRUSH_SIZE_STEP = 8;
 const BRUSH_SIZE_MIN = 12;
@@ -33,6 +33,7 @@ export class PaintScene extends Phaser.Scene {
   private smoothedDrawPositions: (Point | null)[] = [null, null];
   private lastDrawPositions: (Point | null)[] = [null, null];
   private drawingHands = new Set<number>();
+  private landmarksDirty = false;
   private activeTool: Tool = "brush";
   private activeColor: PaintColor = PALETTE[2];
   private brushSize = DEFAULT_BRUSH_SIZE;
@@ -46,39 +47,29 @@ export class PaintScene extends Phaser.Scene {
 
     this.input.keyboard?.on("keydown-UP", this.onIncreaseBrush);
     this.input.keyboard?.on("keydown-DOWN", this.onDecreaseBrush);
-    this.input.keyboard?.on("keydown-Q", this.onQuitToMenu);
+    bindQuitKey(this);
 
     try {
       const videoEl = await handTracker.initCamera();
       this.webcam = new WebcamLayer(this);
-      this.webcam.setup(videoEl, width, height);
+      this.webcam.setup(videoEl);
 
       this.createPaintLayer(width, height);
       this.buildUI(width, height);
 
       await handTracker.initDetector({ numHands: 2 });
       handTracker.start({ targetFps: PAINT_TRACKER_FPS });
-      handTracker.on("landmarks", this.onLandmarks, this);
+      listenLandmarks(this, this.onLandmarks);
 
       this.scale.on("resize", this.onResize, this);
       this.events.once("shutdown", () => {
-        handTracker.off("landmarks", this.onLandmarks, this);
         this.scale.off("resize", this.onResize, this);
         this.input.keyboard?.off("keydown-UP", this.onIncreaseBrush);
         this.input.keyboard?.off("keydown-DOWN", this.onDecreaseBrush);
-        this.input.keyboard?.off("keydown-Q", this.onQuitToMenu);
       });
     } catch (err) {
       console.error("[PaintScene] erreur d'initialisation:", err);
-      this.add
-        .text(width / 2, height / 2, "Caméra refusée\nVeuillez autoriser l'accès à la webcam", {
-          fontSize: "28px",
-          fontFamily: FONT.ui,
-          color: COLOR.danger,
-          align: "center",
-        })
-        .setOrigin(0.5)
-        .setDepth(DEPTH.topUi);
+      showCameraError(this);
     }
   }
 
@@ -115,6 +106,7 @@ export class PaintScene extends Phaser.Scene {
   }
 
   private redrawToolHud(): void {
+    this.landmarksDirty = true;
     const { width, height } = this.scale;
     redrawToolHud(
       { gfx: this.hudGraphics, scene: this, width, height, toolButtons: this.toolButtons },
@@ -152,14 +144,17 @@ export class PaintScene extends Phaser.Scene {
       this.smoothedDrawPositions[i] = smoothPoint(this.smoothedDrawPositions[i], drawPos);
       this.drawingHands.add(i);
     }
+    this.landmarksDirty = true;
   };
 
-  update(time: number, delta: number): void {
+  update(_time: number, delta: number): void {
     if (!this.webcam) return;
-    this.webcam.render(time, PAINT_WEBCAM_FPS);
 
-    this.drawActiveStrokes();
-    this.drawCursors();
+    if (this.landmarksDirty) {
+      this.landmarksDirty = false;
+      this.drawActiveStrokes();
+      this.drawCursors();
+    }
     this.btnClear.update(this.handPositions, delta);
     this.toolButtons.forEach(({ button }) => button.update(this.handPositions, delta));
   }
@@ -201,10 +196,6 @@ export class PaintScene extends Phaser.Scene {
 
   private readonly onDecreaseBrush = (): void => {
     this.setBrushSize(this.brushSize - BRUSH_SIZE_STEP);
-  };
-
-  private readonly onQuitToMenu = (): void => {
-    this.scene.start("MenuScene", { selectedGameKey: this.sys.settings.key });
   };
 
   private clearCanvas(): void {

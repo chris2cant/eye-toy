@@ -6,5 +6,8 @@
       "Bash(pnpm tsc *)",
       "Bash(pnpm exec *)"
     ]
-  }
+  },
+  "disabledMcpjsonServers": [
+    "openclassrooms-gateway"
+  ]
 }

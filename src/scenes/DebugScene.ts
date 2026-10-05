@@ -1,8 +1,10 @@
 import Phaser from "phaser";
 import { COLOR, HEX, FONT } from "../design-system/tokens";
+import { formatProbes } from "../camera/perfProbe";
 
 const PANEL_W = 218;
-const PANEL_H = 96;
+const PANEL_H = 150;
+const PROBES_Y = 88;
 const PAD = 8;
 const ROWS = [22, 44, 66] as const;
 const BAR_X = 96;
@@ -34,6 +36,7 @@ export class DebugScene extends Phaser.Scene {
   private valFps!: Phaser.GameObjects.Text;
   private valDelta!: Phaser.GameObjects.Text;
   private valMem!: Phaser.GameObjects.Text;
+  private valProbes!: Phaser.GameObjects.Text;
   private shown = false;
 
   constructor() { super({ key: "DebugScene" }); }
@@ -99,6 +102,15 @@ export class DebugScene extends Phaser.Scene {
 
     this.gauges = this.add.graphics();
     this.container.add(this.gauges);
+
+    this.buildProbes();
+  }
+
+  private buildProbes() {
+    this.valProbes = this.add.text(PAD, PROBES_Y, "", {
+      fontSize: "10px", fontFamily: FONT.identity, color: COLOR.textMuted,
+    });
+    this.container.add(this.valProbes);
   }
 
   private fillGauge(rowIndex: number, ratio: number, colorHex: number) {
@@ -137,5 +149,6 @@ export class DebugScene extends Phaser.Scene {
     this.fillGauge(0, fpsRatio, fpsClr.hex);
     this.fillGauge(1, deltaRatio, deltaClr.hex);
     if (mem) this.fillGauge(2, memRatio, memClr.hex);
+    this.valProbes.setText(formatProbes());
   }
 }

@@ -69,8 +69,11 @@ function getActiveLabel(state: ToolHudState): string {
 }
 
 function addActiveLabel(scene: Phaser.Scene, label: string, x: number, y: number): void {
-  const existing = scene.children.getByName("paint-active-label");
-  if (existing) existing.destroy();
+  const existing = scene.children.getByName("paint-active-label") as Phaser.GameObjects.Text | null;
+  if (existing) {
+    existing.setText(label).setPosition(x, y);
+    return;
+  }
   scene.add.text(x, y, label, { fontSize: "15px", fontFamily: FONT.ui, fontStyle: "700", color: COLOR.textPrimary })
     .setName("paint-active-label").setOrigin(0, 0.5).setDepth(DEPTH.hud);
 }

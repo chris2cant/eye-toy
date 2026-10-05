@@ -18,7 +18,7 @@ export const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   width: window.innerWidth,
   height: window.innerHeight,
-  backgroundColor: "#FFF8F2",
+  transparent: true,
   scene: [
     BootScene,
     MenuScene,

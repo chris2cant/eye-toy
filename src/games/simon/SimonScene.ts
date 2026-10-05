@@ -12,7 +12,7 @@ import type { SimonColor } from "./SimonAudio";
 import { audioFX } from "../../audio/AudioFX";
 import { createGameOverPanel, createSimonHUD, showGameOverDisplay, createDifficultySelector } from "./SimonSceneUI";
 import {
-  ZONE_SETUP, MAX_LIVES, DWELL_ZONE_MS, DWELL_START_MS, TRACKER_FPS, WEBCAM_FPS, HS_KEY,
+  ZONE_SETUP, MAX_LIVES, DWELL_ZONE_MS, DWELL_START_MS, TRACKER_FPS, HS_KEY,
   ZONE_RADIUS_RATIO, DIFFICULTY_CONFIGS, DIFFICULTIES,
 } from "./SimonSceneConfig";
 import type { Difficulty } from "./SimonSceneConfig";
@@ -57,7 +57,7 @@ export class SimonScene extends Phaser.Scene {
 
     const videoEl = await handTracker.initCamera();
     this.webcam = new WebcamLayer(this);
-    this.webcam.setup(videoEl, width, height);
+    this.webcam.setup(videoEl);
 
     this.setupZones(width, height);
 
@@ -202,7 +202,6 @@ export class SimonScene extends Phaser.Scene {
 
   update(time: number, delta: number): void {
     if (!this.webcam) return;
-    this.webcam.render(time, WEBCAM_FPS);
 
     if (this.state === "idle" || this.state === "gameover") {
       this.btnStart.update(this.handPositions, delta);

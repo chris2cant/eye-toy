@@ -74,7 +74,7 @@ class PaintColorControl extends Phaser.GameObjects.Container {
     this.drawActiveRing();
   }
 
-  setActive(active: boolean): void {
+  setSelected(active: boolean): void {
     this.isActive = active;
     this.drawActiveRing();
   }
@@ -215,7 +215,7 @@ export function createPaintColor(scene: Phaser.Scene, x: number, y: number, conf
   const control = new PaintColorControl(scene, x, y, config);
   return {
     container: control,
-    setActive: (active: boolean) => control.setActive(active),
+    setActive: (active: boolean) => control.setSelected(active),
     update: (hands, delta) => control.update(hands, delta),
     reset: () => control.reset(),
     destroy: () => control.destroy(),

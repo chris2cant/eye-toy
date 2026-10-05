@@ -102,19 +102,21 @@ function strokeCordLayers(ctx: CanvasRenderingContext2D, style: CordStyle, spec:
     ctx.stroke();
   };
 
-  ctx.shadowColor = color;
-  ctx.shadowBlur = getCordGlow(style, pulse, resonanceT);
+  // Halo simulé par des traits larges translucides (shadowBlur est trop coûteux).
+  const glow = getCordGlow(style, pulse, resonanceT);
   ctx.strokeStyle = color;
+  ctx.globalAlpha = isBlueWeb ? 0.07 + resonanceT * 0.05 : 0.12 + resonanceT * 0.06;
+  ctx.lineWidth = lineWidth + glow * 0.5;
+  strokeLine();
+
   ctx.globalAlpha = isBlueWeb ? 0.16 + resonanceT * 0.1 : 0.34 + resonanceT * 0.16;
   ctx.lineWidth = lineWidth * (isBlueWeb ? 2.2 : 3.5);
   strokeLine();
 
-  ctx.shadowBlur = isBlueWeb ? 6 + resonanceT * 6 : style === "laser" ? 4 : 12 + pulse * 8;
   ctx.lineWidth = lineWidth;
   ctx.globalAlpha = isBlueWeb ? 0.78 : 0.94;
   strokeLine();
 
-  ctx.shadowBlur = 0;
   ctx.strokeStyle = style === "arcade" ? "#ffe66d" : "#ffffff";
   ctx.globalAlpha = isBlueWeb ? 0.26 : 0.35 + pulse * 0.2;
   ctx.lineWidth = isBlueWeb ? 0.45 : style === "laser" ? 1 : 0.8;

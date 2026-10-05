@@ -1,45 +1,40 @@
 import Phaser from "phaser";
 
+const VIDEO_STYLE = [
+  "position:fixed",
+  "inset:0",
+  "width:100vw",
+  "height:100vh",
+  "object-fit:cover",
+  "transform:scaleX(-1)",
+  "pointer-events:none",
+  "z-index:0",
+  "display:none",
+].join(";");
+
+/**
+ * Affiche la webcam via l'élément <video> du DOM, placé derrière le canvas Phaser
+ * (transparent) : le compositeur du navigateur fait le miroir et le cadrage cover,
+ * sans drawImage ni upload de texture à chaque frame.
+ */
 export class WebcamLayer {
   private videoEl: HTMLVideoElement | null = null;
-  private tex: Phaser.Textures.CanvasTexture | null = null;
-  private bg: Phaser.GameObjects.Image | null = null;
-  private nextRenderAt = 0;
 
   constructor(private readonly scene: Phaser.Scene) {}
 
-  setup(videoEl: HTMLVideoElement, width: number, height: number): void {
+  setup(videoEl: HTMLVideoElement, opacity = 1): void {
+    if (this.scene.sys.settings.status >= Phaser.Scenes.SHUTDOWN) return;
     this.videoEl = videoEl;
-    if (this.scene.textures.exists("webcam")) this.scene.textures.remove("webcam");
-    const tex = this.scene.textures.createCanvas("webcam", width, height);
-    if (!tex) throw new Error("createCanvas returned null");
-    this.tex = tex;
-    this.bg = this.scene.add.image(width / 2, height / 2, "webcam").setDepth(-10);
-    this.scene.scale.on("resize", this.onResize, this);
+    videoEl.style.cssText = VIDEO_STYLE;
+    videoEl.style.opacity = String(opacity);
+    videoEl.style.display = "block";
+    if (videoEl.parentElement !== document.body) document.body.prepend(videoEl);
+    this.scene.events.once(Phaser.Scenes.Events.SHUTDOWN, this.hide);
   }
 
-  render(time?: number, maxFps?: number): void {
-    if (time !== undefined && maxFps !== undefined) {
-      if (time < this.nextRenderAt) return;
-      this.nextRenderAt = time + 1000 / Math.max(1, maxFps);
-    }
-    if (!this.tex || !this.videoEl || this.videoEl.readyState < 2) return;
-    const ctx = this.tex.getContext();
-    if (!ctx) return;
-    const { width, height } = this.scene.scale;
-    const vw = this.videoEl.videoWidth;
-    const vh = this.videoEl.videoHeight;
-    if (!vw || !vh) return;
-    const scale = Math.max(width / vw, height / vh);
-    const srcW = width / scale;
-    const srcH = height / scale;
-    ctx.save();
-    ctx.translate(width, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(this.videoEl, (vw - srcW) / 2, (vh - srcH) / 2, srcW, srcH, 0, 0, width, height);
-    ctx.restore();
-    this.tex.refresh();
-  }
+  private readonly hide = (): void => {
+    if (this.videoEl) this.videoEl.style.display = "none";
+  };
 
   getLandmarkMapper(screenW: number, screenH: number): (lmX: number, lmY: number) => { x: number; y: number } {
     const vw = this.videoEl?.videoWidth ?? 0;
@@ -57,10 +52,4 @@ export class WebcamLayer {
       y: ((lmY * vh - offsetY) / srcH) * screenH,
     });
   }
-
-  private onResize = (gameSize: Phaser.Structs.Size): void => {
-    if (!this.tex || !this.bg) return;
-    this.tex.setSize(gameSize.width, gameSize.height);
-    this.bg.setPosition(gameSize.width / 2, gameSize.height / 2);
-  };
 }

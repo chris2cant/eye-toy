@@ -3,11 +3,12 @@ import type { LivesBadgeHandle } from "../../design-system/components/LivesBadge
 import type { Ninja } from "./Ninja";
 import type { Difficulty, WaveConfig, WaveManager } from "./WaveManager";
 import type { MotionDetector } from "../sable-magique/MotionDetector";
+import type { MusicHandle } from "../../audio/music";
 
 export const PALM_LANDMARK = 9;
 export const KF_GAME_DURATION = 60;
-export const KF_WEBCAM_FPS = 24;
 export const KF_HAND_TRACKER_FPS = 15;
+export const KF_GAMEPLAY_HAND_FPS = 6;
 export const KF_MIN_INTENSITY = 0.15;
 export const KF_WOOSH_INTENSITY = 0.45;
 export const KF_WOOSH_COOLDOWN_MS = 1000;
@@ -46,7 +47,7 @@ export interface KungFooState {
   difficultyUiElements: Phaser.GameObjects.GameObject[];
   milestones: number[];
   nextMilestoneIdx: number;
-  bgMusic: Phaser.Sound.BaseSound | null;
+  bgMusic: MusicHandle | null;
   lastWooshAt: number;
   difficulty?: Difficulty;
 }
